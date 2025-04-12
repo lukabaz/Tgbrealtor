@@ -106,13 +106,28 @@ def setup_driver():
     chrome_options.add_argument("--headless")  # Запуск в фоновом режиме
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    return driver
+    
+    try:
+        # Пробуем использовать webdriver_manager с конкретной версией ChromeDriver
+        driver_path = ChromeDriverManager(version="123.0.6312.122").install()
+        logger.info(f"ChromeDriver installed at: {driver_path}")
+        driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
+        logger.info("Selenium WebDriver initialized successfully")
+        return driver
+    except Exception as e:
+        logger.error(f"Failed to setup ChromeDriver with webdriver_manager: {e}")
+        raise
 
 # Функция парсинга объявлений с учетом фильтров
 def parse_myhome(bot, loop):
-    driver = setup_driver()
+    try:
+        driver = setup_driver()
+    except Exception as e:
+        logger.error(f"Failed to setup Selenium driver: {e}")
+        return  # Пропускаем парсинг, если драйвер не запустился
+
     try:
         for chat_id in subscribed_users:
             filters = load_filters(chat_id)
@@ -146,8 +161,8 @@ def parse_myhome(bot, loop):
             try:
                 logger.info(f"Fetching page for chat {chat_id}: {url}")
                 driver.get(url)
-                # Даём время на загрузку страницы и выполнение JavaScript
-                time.sleep(5)
+                # Даём время на загрузку страницы и выполнение JavaScript (увеличиваем время для Cloudflare)
+                time.sleep(10)
 
                 # Получаем HTML-код страницы
                 page_source = driver.page_source
@@ -226,8 +241,11 @@ def run_parser(bot, loop):
     subscribed_users = load_subscribed_users()
     seen_ids = load_seen_ids()
     while True:
-        logger.info("Проверка новых объявлений на myhome.ge...")
-        parse_myhome(bot, loop)
+        try:
+            logger.info("Проверка новых объявлений на myhome.ge...")
+            parse_myhome(bot, loop)
+        except Exception as e:
+            logger.error(f"Error in parser loop: {e}")
         time.sleep(300)  # Проверка каждые 5 минут
 
 # Команда /start
