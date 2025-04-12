@@ -135,7 +135,6 @@ def setup_driver():
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.7049.84 Safari/537.36"
     )
-    # Опции для обхода Cloudflare
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
 
@@ -143,7 +142,6 @@ def setup_driver():
         driver = webdriver.Chrome(options=chrome_options)
         logger.info(f"Selenium WebDriver initialized successfully. ChromeDriver path: {driver.service.path}")
         logger.debug(f"Chrome version: {driver.capabilities['browserVersion']}")
-        logger.debug(f"Chrome binary: {driver.capabilities['chrome']['binary']}")
         return driver
     except WebDriverException as e:
         logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
@@ -151,13 +149,9 @@ def setup_driver():
 
 # Функция парсинга объявлений с учетом фильтров
 def parse_myhome(bot, loop):
+    driver = None
     try:
         driver = setup_driver()
-    except Exception as e:
-        logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
-        return
-
-    try:
         for chat_id in subscribed_users:
             filters = load_filters(chat_id)
             city = filters.get("city", "1")
@@ -202,7 +196,7 @@ def parse_myhome(bot, loop):
 
                 # Проверяем наличие Cloudflare
                 if "Just a moment..." in driver.page_source:
-                    logger.warning(f"Cloudflare detected for chatошибка! Cloudflare challenge page loaded.")
+                    logger.warning(f"Cloudflare detected for chat {chat_id}. Skipping URL.")
                     continue
 
                 # Получаем HTML-код страницы
@@ -266,12 +260,15 @@ def parse_myhome(bot, loop):
             except Exception as e:
                 logger.error(f"Ошибка при загрузке страницы для chat {chat_id}: {e}", exc_info=True)
 
+    except Exception as e:
+        logger.error(f"Failed to parse myhome.ge: {e}", exc_info=True)
     finally:
-        try:
-            driver.quit()
-            logger.debug("WebDriver closed")
-        except Exception as e:
-            logger.error(f"Error closing WebDriver: {e}")
+        if driver:
+            try:
+                driver.quit()
+                logger.debug("WebDriver closed")
+            except Exception as e:
+                logger.error(f"Error closing WebDriver: {e}")
 
 # Функция периодического парсинга
 def run_parser(bot, loop):
