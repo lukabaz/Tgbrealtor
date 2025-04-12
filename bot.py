@@ -201,11 +201,6 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data))
 
-    # Запуск парсера в отдельном потоке
-    parser_thread = threading.Thread(target=run_parser, args=(application.bot, loop))
-    parser_thread.daemon = True
-    parser_thread.start()
-
     # Настройка вебхука для Render
     webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
     logger.info(f"Starting webhook on {webhook_url}")
@@ -213,7 +208,8 @@ def main():
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
         url_path=TOKEN,
-        webhook_url=webhook_url
+        webhook_url=webhook_url,
+        allowed_updates=["message", "callback_query", "web_app_data"]  # Разрешаем обновления от Web App
     )
 
 if __name__ == "__main__":
