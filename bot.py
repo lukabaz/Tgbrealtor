@@ -44,7 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         logger.info(f"User {chat_id} started the bot")
         await update.message.reply_text(
-            "Привет! Нажми кнопку ниже, чтобы выбрать город.",
+            "Привет! Нажми кнопку ниже или используй кнопку 'Выбрать город' в меню бота.",
             reply_markup=get_main_keyboard()
         )
 
@@ -57,7 +57,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     callback_data = query.data
 
     if callback_data == "select_city":
-        # Прямой переход в Web App
+        # Прямой переход в Web App через inline-кнопку
         city_keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("Выбрать город", web_app={"url": "https://realestatege.netlify.app/"})]
         ])
