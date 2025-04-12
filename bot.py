@@ -62,7 +62,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if callback_data == "filters":
         # Прямой переход в Web App
         filters_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Фильтры", web_app={"url": "https://your-web-app-url"})]  # Замените URL
+            [InlineKeyboardButton("Фильтры", web_app={"url": "https://realestatege.netlify.app/filters.html"})]  # Замените URL
         ])
         await query.message.reply_text(
             "Настройте фильтры для поиска объявлений.",
