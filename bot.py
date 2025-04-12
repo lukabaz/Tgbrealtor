@@ -10,6 +10,10 @@ import threading
 import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -96,136 +100,124 @@ def load_seen_ids():
         logger.error(f"Error loading seen_ids: {e}")
         return set()
 
+# Настройка Selenium WebDriver
+def setup_driver():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Запуск в фоновом режиме
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    return driver
+
 # Функция парсинга объявлений с учетом фильтров
 def parse_myhome(bot, loop):
-    for chat_id in subscribed_users:
-        filters = load_filters(chat_id)
-        city = filters.get("city", "1")  # По умолчанию Тбилиси
-        deal_type = filters.get("deal_type", "0")  # 0 - Искать везде, rent - Аренда, sale - Продажа
-        price_from = filters.get("price_from", 100)
-        price_to = filters.get("price_to", 2000)
-        floor_from = filters.get("floor_from", 1)
-        floor_to = filters.get("floor_to", 30)
-        rooms_from = filters.get("rooms_from", 1)
-        rooms_to = filters.get("rooms_to", 5)
-        bedrooms_from = filters.get("bedrooms_from", 1)
-        bedrooms_to = filters.get("bedrooms_to", 2)
-        own_ads = filters.get("own_ads", "1")  # По умолчанию только собственники
+    driver = setup_driver()
+    try:
+        for chat_id in subscribed_users:
+            filters = load_filters(chat_id)
+            city = filters.get("city", "1")  # По умолчанию Тбилиси
+            deal_type = filters.get("deal_type", "0")  # 0 - Искать везде, rent - Аренда, sale - Продажа
+            price_from = filters.get("price_from", 100)
+            price_to = filters.get("price_to", 2000)
+            floor_from = filters.get("floor_from", 1)
+            floor_to = filters.get("floor_to", 30)
+            rooms_from = filters.get("rooms_from", 1)
+            rooms_to = filters.get("rooms_to", 5)
+            bedrooms_from = filters.get("bedrooms_from", 1)
+            bedrooms_to = filters.get("bedrooms_to", 2)
+            own_ads = filters.get("own_ads", "1")  # По умолчанию только собственники
 
-        # Формируем URL с фильтрами
-        pr_type = ""
-        if deal_type == "rent":
-            pr_type = "1"  # Аренда
-        elif deal_type == "sale":
-            pr_type = "2"  # Продажа
+            # Формируем URL с фильтрами
+            pr_type = ""
+            if deal_type == "rent":
+                pr_type = "1"  # Аренда
+            elif deal_type == "sale":
+                pr_type = "2"  # Продажа
 
-        url = (
-            f"https://www.myhome.ge/ru/s?Keyword=&Owner={own_ads}&PrTypeID={pr_type}&CityID={city}&Furnished=&KeywordType=False&Sort=4"
-            f"&PriceFrom={price_from}&PriceTo={price_to}"
-            f"&FloorFrom={floor_from}&FloorTo={floor_to}"
-            f"&RoomNumFrom={rooms_from}&RoomNumTo={rooms_to}"
-            f"&BedroomNumFrom={bedrooms_from}&BedroomNumTo={bedrooms_to}"
-        )
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"
-        }
-        # Список прокси для теста
-        proxy_list = [
-            {"http": "http://64.62.219.199:3128", "https": "http://64.62.219.199:3128"},
-            {"http": "http://83.217.23.36:8090", "https": "http://83.217.23.36:8090"},
-            {"http": "http://54.37.214.253:8080", "https": "http://54.37.214.253:8080"},
-            {"http": "http://164.90.242.76:3128", "https": "http://164.90.242.76:3128"},
-            {"http": "http://149.129.255.179:80", "https": "http://149.129.255.179:80"}
-        ]
+            url = (
+                f"https://www.myhome.ge/ru/s?Keyword=&Owner={own_ads}&PrTypeID={pr_type}&CityID={city}&Furnished=&KeywordType=False&Sort=4"
+                f"&PriceFrom={price_from}&PriceTo={price_to}"
+                f"&FloorFrom={floor_from}&FloorTo={floor_to}"
+                f"&RoomNumFrom={rooms_from}&RoomNumTo={rooms_to}"
+                f"&BedroomNumFrom={bedrooms_from}&BedroomNumTo={bedrooms_to}"
+            )
 
-        response = None
-        for proxies in proxy_list:
             try:
-                logger.info(f"Trying proxy: {proxies['http']}")
-                response = requests.get(url, headers=headers, proxies=proxies, timeout=10)
-                if response.status_code == 200:
-                    logger.info(f"Success with proxy: {proxies['http']}")
-                    break
-                else:
-                    logger.error(f"Failed with proxy {proxies['http']}: {response.status_code}")
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Error with proxy {proxies['http']}: {e}")
-                continue
+                logger.info(f"Fetching page for chat {chat_id}: {url}")
+                driver.get(url)
+                # Даём время на загрузку страницы и выполнение JavaScript
+                time.sleep(5)
 
-        # Если ни один прокси не сработал, пробуем без прокси
-        if not response or response.status_code != 200:
-            try:
-                logger.info("Retrying without proxy...")
-                response = requests.get(url, headers=headers, timeout=10)
-                if response.status_code != 200:
-                    logger.error(f"Failed to fetch page for chat {chat_id} without proxy: {response.status_code}")
-                    continue
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Ошибка при запросе страницы для chat {chat_id} без прокси: {e}")
-                continue
+                # Получаем HTML-код страницы
+                page_source = driver.page_source
+                soup = BeautifulSoup(page_source, 'html.parser')
+                listings = soup.find_all('div', class_='statement-card')
 
-        soup = BeautifulSoup(response.text, 'html.parser')
-        listings = soup.find_all('div', class_='statement-card')
-
-        for listing in listings:
-            try:
-                # ID объявления
-                link_tag = listing.find('a', class_='card-container-link')
-                if not link_tag:
-                    continue
-                link = "https://www.myhome.ge" + link_tag['href']
-                listing_id = link.split('/')[-1]
-
-                if listing_id in seen_ids:
+                if not listings:
+                    logger.warning(f"No listings found for chat {chat_id}. Page may not have loaded correctly.")
                     continue
 
-                # Заголовок
-                title_tag = listing.find('div', class_='card-title')
-                title = title_tag.text.strip() if title_tag else "Без заголовка"
+                for listing in listings:
+                    try:
+                        # ID объявления
+                        link_tag = listing.find('a', class_='card-container-link')
+                        if not link_tag:
+                            continue
+                        link = "https://www.myhome.ge" + link_tag['href']
+                        listing_id = link.split('/')[-1]
 
-                # Цена
-                price_tag = listing.find('div', class_='card-price')
-                price = price_tag.text.strip() if price_tag else "Цена не указана"
+                        if listing_id in seen_ids:
+                            continue
 
-                # Местоположение
-                location_tag = listing.find('div', class_='card-address')
-                location = location_tag.text.strip() if location_tag else "Местоположение не указано"
+                        # Заголовок
+                        title_tag = listing.find('div', class_='card-title')
+                        title = title_tag.text.strip() if title_tag else "Без заголовка"
 
-                # Телефон (заглушка)
-                phone = "Телефон скрыт (нужен Selenium)"
+                        # Цена
+                        price_tag = listing.find('div', class_='card-price')
+                        price = price_tag.text.strip() if price_tag else "Цена не указана"
 
-                # Формируем сообщение
-                message = (
-                    f"Новое объявление:\n"
-                    f"Заголовок: {title}\n"
-                    f"Цена: {price}\n"
-                    f"Местоположение: {location}\n"
-                    f"Телефон: {phone}\n"
-                    f"Ссылка: {link}"
-                )
-                logger.info(f"Найдено объявление для chat {chat_id}: {title}")
+                        # Местоположение
+                        location_tag = listing.find('div', class_='card-address')
+                        location = location_tag.text.strip() if location_tag else "Местоположение не указано"
 
-                # Отправляем пользователю
-                future = asyncio.run_coroutine_threadsafe(
-                    send_message(bot, chat_id, message, get_settings_keyboard()),
-                    loop
-                )
-                try:
-                    future.result(timeout=5)
-                    logger.debug(f"Message sent to {chat_id}")
-                except Exception as e:
-                    logger.error(f"Failed to send message to {chat_id}: {e}")
+                        # Телефон (пока заглушка)
+                        phone = "Телефон скрыт (нужен Selenium)"
 
-                seen_ids.add(listing_id)
-                save_seen_ids()
+                        # Формируем сообщение
+                        message = (
+                            f"Новое объявление:\n"
+                            f"Заголовок: {title}\n"
+                            f"Цена: {price}\n"
+                            f"Местоположение: {location}\n"
+                            f"Телефон: {phone}\n"
+                            f"Ссылка: {link}"
+                        )
+                        logger.info(f"Найдено объявление для chat {chat_id}: {title}")
+
+                        # Отправляем пользователю
+                        future = asyncio.run_coroutine_threadsafe(
+                            send_message(bot, chat_id, message, get_settings_keyboard()),
+                            loop
+                        )
+                        try:
+                            future.result(timeout=5)
+                            logger.debug(f"Message sent to {chat_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to send message to {chat_id}: {e}")
+
+                        seen_ids.add(listing_id)
+                        save_seen_ids()
+
+                    except Exception as e:
+                        logger.error(f"Ошибка парсинга объявления для chat {chat_id}: {e}")
 
             except Exception as e:
-                logger.error(f"Ошибка парсинга объявления для chat {chat_id}: {e}")
+                logger.error(f"Ошибка при загрузке страницы для chat {chat_id}: {e}")
+
+    finally:
+        driver.quit()
 
 # Функция периодического парсинга
 def run_parser(bot, loop):
