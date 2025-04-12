@@ -30,11 +30,24 @@ def get_main_keyboard():
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
-    logger.info(f"User {chat_id} started the bot")
-    await update.message.reply_text(
-        "Привет! Нажми кнопку ниже, чтобы выбрать город.",
-        reply_markup=get_main_keyboard()
-    )
+    args = context.args  # Получаем параметры из deep link
+
+    if args and args[0].startswith("city_"):
+        # Извлекаем город из параметра
+        city_id = args[0].split("_")[1]
+        user_filters[chat_id] = {"city": city_id}
+        city_name = {"1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}.get(city_id, "Неизвестный город")
+        logger.info(f"User {chat_id} set city to {city_id} via deep link")
+        await update.message.reply_text(
+            f"Город обновлен: {city_name}!",
+            reply_markup=get_main_keyboard()
+        )
+    else:
+        logger.info(f"User {chat_id} started the bot")
+        await update.message.reply_text(
+            "Привет! Нажми кнопку ниже, чтобы выбрать город.",
+            reply_markup=get_main_keyboard()
+        )
 
 # Обработка нажатий на кнопки
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -58,27 +71,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def debug_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.debug(f"Получено обновление: {update.to_dict()}")
 
-# Обработчик данных от Web App
-async def web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.debug(f"Получено обновление от Web App: {update.to_dict()}")
-    chat_id = update.message.chat_id
-    logger.debug(f"Получены данные от Web App для chat {chat_id}")
-    data = update.message.web_app_data.data
-    logger.debug(f"Сырые данные Web App: {data}")
-    try:
-        city_data = json.loads(data)
-        user_filters[chat_id] = city_data
-        city_id = city_data.get("city")
-        city_name = { "1": "Тбилиси", "2": "Батуми", "3": "Кутаиси" }.get(city_id, "Неизвестный город")
-        logger.info(f"Обновлен фильтр города для chat {chat_id}: {city_data}")
-        await update.message.reply_text(f"Город обновлен: {city_name}!", reply_markup=get_main_keyboard())
-    except json.JSONDecodeError as e:
-        logger.error(f"Ошибка декодирования JSON для chat {chat_id}: {e}, данные: {data}")
-        await update.message.reply_text("Ошибка: некорректный формат данных.", reply_markup=get_main_keyboard())
-    except Exception as e:
-        logger.error(f"Ошибка обработки данных Web App для chat {chat_id}: {e}")
-        await update.message.reply_text("Ошибка при обновлении города.", reply_markup=get_main_keyboard())
-
 # Обработчик ошибок
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error(f"Произошла ошибка: {context.error}")
@@ -95,7 +87,6 @@ def main():
     # Регистрация обработчиков
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data))
     # Добавляем обработчик для всех обновлений
     application.add_handler(MessageHandler(filters.ALL, debug_update), group=1)
     # Добавляем обработчик ошибок
