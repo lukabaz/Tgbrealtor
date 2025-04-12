@@ -4,7 +4,6 @@ import json
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from telegram.error import Conflict
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -71,14 +70,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def debug_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.debug(f"Получено обновление: {update.to_dict()}")
 
-# Обработчик ошибок
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error(f"Произошла ошибка: {context.error}")
-    if isinstance(context.error, Conflict):
-        logger.error("Конфликт: другой экземпляр бота использует getUpdates. Перезапускаю polling через 10 секунд...")
-        await asyncio.sleep(10)
-        context.application.run_polling(allowed_updates=["message", "callback_query"])
-
 # Основная функция
 def main():
     # Создаем приложение
@@ -89,12 +80,17 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler))
     # Добавляем обработчик для всех обновлений
     application.add_handler(MessageHandler(filters.ALL, debug_update), group=1)
-    # Добавляем обработчик ошибок
-    application.add_error_handler(error_handler)
 
-    # Запускаем polling
-    logger.info("Starting polling...")
-    application.run_polling(allowed_updates=["message", "callback_query"])
+    # Настройка вебхука
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+    logger.info(f"Setting webhook to {webhook_url}")
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=10000,
+        url_path=TOKEN,
+        webhook_url=webhook_url,
+        allowed_updates=["message", "callback_query"]
+    )
 
 if __name__ == "__main__":
     main()
