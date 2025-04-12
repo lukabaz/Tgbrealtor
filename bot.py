@@ -7,13 +7,14 @@ import re
 from bs4 import BeautifulSoup
 import threading
 import time
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import undetected_chromedriver as uc  # Используем undetected-chromedriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, WebDriverException
 
 # Настройка логирования
@@ -33,6 +34,7 @@ logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('selenium').setLevel(logging.WARNING)
 logging.getLogger('telegram').setLevel(logging.WARNING)
+logging.getLogger('undetected_chromedriver').setLevel(logging.WARNING)
 
 # Включаем DEBUG только для __main__
 logging.getLogger(__name__).setLevel(logging.DEBUG)
@@ -67,7 +69,7 @@ async def send_message(bot, chat_id: int, message: str, reply_markup=None):
         )
         logger.debug(f"Message sent to chat {chat_id}")
     except Exception as e:
-        logger.error(f"Failed to send message to chat {chat_id}: {e}")
+        logger.error(f"Failed to send message to chat {chat_id}: {e}", exc_info=True)
 
 # Создание клавиатуры для открытия Web App
 def get_settings_keyboard():
@@ -82,7 +84,7 @@ def save_filters(chat_id: int, filters: dict):
         redis_client.set(f"filters:{chat_id}", json.dumps(filters))
         logger.info(f"Saved filters for chat {chat_id}: {filters}")
     except Exception as e:
-        logger.error(f"Error saving filters for chat {chat_id}: {e}")
+        logger.error(f"Error saving filters for chat {chat_id}: {e}", exc_info=True)
 
 # Загрузка фильтров из Redis
 def load_filters(chat_id: int) -> dict:
@@ -92,7 +94,7 @@ def load_filters(chat_id: int) -> dict:
             return json.loads(filters_data)
         return {}
     except Exception as e:
-        logger.error(f"Error loading filters for chat {chat_id}: {e}")
+        logger.error(f"Error loading filters for chat {chat_id}: {e}", exc_info=True)
         return {}
 
 # Сохранение подписанных пользователей в Redis
@@ -101,7 +103,7 @@ def save_subscribed_users():
         redis_client.set("subscribed_users", json.dumps(list(subscribed_users)))
         logger.info(f"Saved subscribed users: {subscribed_users}")
     except Exception as e:
-        logger.error(f"Error saving subscribed users: {e}")
+        logger.error(f"Error saving subscribed users: {e}", exc_info=True)
 
 # Загрузка подписанных пользователей из Redis
 def load_subscribed_users():
@@ -111,7 +113,7 @@ def load_subscribed_users():
             return set(json.loads(users_data))
         return set()
     except Exception as e:
-        logger.error(f"Error loading subscribed users: {e}")
+        logger.error(f"Error loading subscribed users: {e}", exc_info=True)
         return set()
 
 # Сохранение seen_ids в Redis
@@ -120,7 +122,7 @@ def save_seen_ids():
         redis_client.set("seen_ids", json.dumps(list(seen_ids)))
         logger.info(f"Saved seen_ids: {len(seen_ids)} entries")
     except Exception as e:
-        logger.error(f"Error saving seen_ids: {e}")
+        logger.error(f"Error saving seen_ids: {e}", exc_info=True)
 
 # Загрузка seen_ids из Redis
 def load_seen_ids():
@@ -130,27 +132,27 @@ def load_seen_ids():
             return set(json.loads(ids_data))
         return set()
     except Exception as e:
-        logger.error(f"Error loading seen_ids: {e}")
+        logger.error(f"Error loading seen_ids: {e}", exc_info=True)
         return set()
 
-# Настройка Selenium WebDriver
+# Настройка Selenium WebDriver с undetected-chromedriver
 def setup_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--log-level=DEBUG")
-    chrome_options.add_argument(
+    options = uc.ChromeOptions()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.7049.84 Safari/537.36"
     )
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
 
     try:
-        driver = webdriver.Chrome(options=chrome_options)
-        logger.info(f"Selenium WebDriver initialized successfully. ChromeDriver path: {driver.service.path}")
-        logger.debug(f"Chrome version: {driver.capabilities['browserVersion']}")
+        driver = uc.Chrome(options=options, use_subprocess=True)
+        logger.info(f"Selenium WebDriver initialized successfully with undetected-chromedriver")
+        logger.debug(f"Chrome version: {driver.capabilities.get('browserVersion', 'unknown')}")
         return driver
     except WebDriverException as e:
         logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
@@ -189,28 +191,34 @@ def parse_myhome(bot, loop):
                 f"&BedroomNumFrom={bedrooms_from}&BedroomNumTo={bedrooms_to}"
             )
 
-            for attempt in range(3):
+            for attempt in range(5):  # Увеличено до 5 попыток
                 try:
-                    logger.info(f"Fetching page for chat {chat_id} (attempt {attempt + 1}/3): {url}")
+                    logger.info(f"Fetching page for chat {chat_id} (attempt {attempt + 1}/5): {url}")
                     driver.get(url)
                     
+                    # Случайная задержка для имитации поведения пользователя
+                    time.sleep(random.uniform(2, 5))
+                    # Имитация прокрутки страницы
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 2);")
+                    time.sleep(random.uniform(1, 3))
+                    
                     # Ожидаем загрузки объявлений
-                    try:
-                        WebDriverWait(driver, 30).until(
-                            EC.presence_of_element_located((By.CLASS_NAME, "statement-card"))
-                        )
-                        logger.debug(f"Page loaded successfully for chat {chat_id}")
-                        break
-                    except TimeoutException:
-                        logger.warning(f"Timeout waiting for listings for chat {chat_id}. Page source: {driver.page_source[:500]}...")
-                        continue
-
+                    WebDriverWait(driver, 60).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "statement-card"))
+                    )
+                    logger.debug(f"Page loaded successfully for chat {chat_id}")
+                    break
+                except TimeoutException:
+                    logger.warning(f"Timeout waiting for listings for chat {chat_id}. Page source: {driver.page_source[:500]}...")
+                    time.sleep(5)  # Задержка перед повторной попыткой
+                    continue
                 except Exception as e:
-                    logger.error(f"Error loading page for chat {chat_id} on attempt {attempt + 1}: {e}")
+                    logger.error(f"Error loading page for chat {chat_id} on attempt {attempt + 1}: {e}", exc_info=True)
+                    time.sleep(5)
                     continue
 
             else:
-                logger.error(f"Failed to load page for chat {chat_id} after 3 attempts")
+                logger.error(f"Failed to load page for chat {chat_id} after 5 attempts")
                 continue
 
             # Проверяем наличие Cloudflare
@@ -268,7 +276,7 @@ def parse_myhome(bot, loop):
                         future.result(timeout=5)
                         logger.debug(f"Message sent to {chat_id}")
                     except Exception as e:
-                        logger.error(f"Failed to send message to {chat_id}: {e}")
+                        logger.error(f"Failed to send message to {chat_id}: {e}", exc_info=True)
 
                     seen_ids.add(listing_id)
                     save_seen_ids()
@@ -284,7 +292,7 @@ def parse_myhome(bot, loop):
                 driver.quit()
                 logger.debug("WebDriver closed")
             except Exception as e:
-                logger.error(f"Error closing WebDriver: {e}")
+                logger.error(f"Error closing WebDriver: {e}", exc_info=True)
 
 # Функция периодического парсинга
 def run_parser(bot, loop):
