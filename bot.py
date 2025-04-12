@@ -62,10 +62,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if callback_data == "settings":
         # Клавиатура с кнопкой "Запуск"
         launch_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Запуск", web_app={"url": "https://your-web-app-url"})]  # Замените URL
+            [InlineKeyboardButton("Запуск", web_app={"url": "https://realestatege.netlify.app/filters.html"})]  # Замените URL
         ])
         await query.message.reply_text(
-            "Открыва это мини-приложение. Вы принимаете Условия использования мини-приложения.",
+            "Открывая это мини-приложение. Вы принимаете Условия использования мини-приложения.",
             reply_markup=launch_keyboard
         )
     elif callback_data == "archive":
