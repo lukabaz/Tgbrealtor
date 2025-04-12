@@ -35,7 +35,7 @@ def get_main_keyboard():
         [
             InlineKeyboardButton("Архив", callback_data="archive"),
             InlineKeyboardButton("Графики", callback_data="charts"),
-            InlineKeyboardButton("Фильтры", callback_data="filters")  # Заменили "Настройки" на "Фильтры"
+            InlineKeyboardButton("Фильтры", callback_data="filters")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -62,7 +62,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if callback_data == "filters":
         # Прямой переход в Web App
         filters_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Фильтры", web_app={"url": "https://realestatege.netlify.app/filters.html"})]  # Замените URL
+            [InlineKeyboardButton("Фильтры", web_app={"url": "https://realestatege.netlify.app/filters.html"})]
         ])
         await query.message.reply_text(
             "Настройте фильтры для поиска объявлений.",
@@ -180,6 +180,9 @@ async def web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         user_filters[chat_id] = filters_data
         logger.info(f"Обновлены фильтры для chat {chat_id}: {filters_data}")
         await update.message.reply_text("Фильтры обновлены!", reply_markup=get_main_keyboard())
+    except json.JSONDecodeError as e:
+        logger.error(f"Ошибка декодирования JSON для chat {chat_id}: {e}, данные: {data}")
+        await update.message.reply_text("Ошибка: некорректный формат данных фильтров.", reply_markup=get_main_keyboard())
     except Exception as e:
         logger.error(f"Ошибка обработки данных Web App для chat {chat_id}: {e}")
         await update.message.reply_text("Ошибка при обновлении фильтров.", reply_markup=get_main_keyboard())
