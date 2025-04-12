@@ -16,171 +16,124 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('bot.log')
-    ]
+    handlers=[logging.StreamHandler(), logging.FileHandler('bot.log')]
 )
 logger = logging.getLogger(__name__)
-
-# Ограничиваем логи сторонних библиотек
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('cloudscraper').setLevel(logging.WARNING)
 logging.getLogger('telegram').setLevel(logging.WARNING)
+logging.getLogger(__name__).setLevel(logging.DEBUG)
 
-# Включаем DEBUG только для __main__
-logging.getLogger("__main__").setLevel(logging.DEBUG)
-
-# Токен от BotFather
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-if not TOKEN:
-    logger.error("TELEGRAM_TOKEN environment variable is not set")
-    raise ValueError("TELEGRAM_TOKEN is required")
+# Проверка переменных окружения
+TOKEN = os.getenv("TELEGRAM_TOKEN") or (logger.error("TELEGRAM_TOKEN not set") or exit(1))
+REDIS_URL = os.getenv("REDIS_URL") or (logger.error("REDIS_URL not set") or exit(1))
+RENDER_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME") or logger.warning("RENDER_EXTERNAL_HOSTNAME not set")
 
 # Подключение к Redis
-redis_url = os.getenv("REDIS_URL")
-if not redis_url:
-    logger.error("REDIS_URL environment variable is not set")
-    raise ValueError("REDIS_URL is required")
-redis_client = redis.from_url(redis_url, decode_responses=True)
+try:
+    redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+    redis_client.ping()
+    logger.info("Connected to Redis")
+except Exception as e:
+    logger.error(f"Failed to connect to Redis: {e}")
+    raise
 
-# Список пользователей, которые подписались на уведомления
 subscribed_users = set()
-
-# Хранилище ID объявлений, чтобы не дублировать
 seen_ids = set()
 
-# Асинхронная функция для отправки сообщений в Telegram
 async def send_message(bot, chat_id: int, message: str, reply_markup=None):
     try:
-        await bot.send_message(
-            chat_id=chat_id,
-            text=message,
-            reply_markup=reply_markup,
-            disable_web_page_preview=True
-        )
-        logger.debug(f"Message sent to chat {chat_id}")
+        await bot.send_message(chat_id=chat_id, text=message, reply_markup=reply_markup, disable_web_page_preview=True)
+        logger.debug(f"Message sent to {chat_id}")
     except Exception as e:
-        logger.error(f"Failed to send message to chat {chat_id}: {e}", exc_info=True)
+        logger.error(f"Failed to send message to {chat_id}: {e}")
 
-# Создание клавиатуры для открытия Web App
 def get_settings_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("Открыть настройки", web_app={"url": "https://realestatege.netlify.app/"})]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Открыть настройки", web_app={"url": "https://realestatege.netlify.app/"})]])
 
-# Сохранение фильтров в Redis
 def save_filters(chat_id: int, filters: dict):
     try:
         redis_client.set(f"filters:{chat_id}", json.dumps(filters))
-        logger.info(f"Saved filters for chat {chat_id}: {filters}")
+        logger.info(f"Saved filters for {chat_id}: {filters}")
     except Exception as e:
-        logger.error(f"Error saving filters for chat {chat_id}: {e}", exc_info=True)
+        logger.error(f"Error saving filters for {chat_id}: {e}")
 
-# Загрузка фильтров из Redis
 def load_filters(chat_id: int) -> dict:
     try:
         filters_data = redis_client.get(f"filters:{chat_id}")
-        if filters_data:
-            return json.loads(filters_data)
-        return {}
+        return json.loads(filters_data) if filters_data else {}
     except Exception as e:
-        logger.error(f"Error loading filters for chat {chat_id}: {e}", exc_info=True)
+        logger.error(f"Error loading filters for {chat_id}: {e}")
         return {}
 
-# Сохранение подписанных пользователей в Redis
 def save_subscribed_users():
     try:
         redis_client.set("subscribed_users", json.dumps(list(subscribed_users)))
         logger.info(f"Saved subscribed users: {subscribed_users}")
     except Exception as e:
-        logger.error(f"Error saving subscribed users: {e}", exc_info=True)
+        logger.error(f"Error saving subscribed users: {e}")
 
-# Загрузка подписанных пользователей из Redis
 def load_subscribed_users():
     try:
         users_data = redis_client.get("subscribed_users")
-        if users_data:
-            return set(json.loads(users_data))
-        return set()
+        return set(json.loads(users_data)) if users_data else set()
     except Exception as e:
-        logger.error(f"Error loading subscribed users: {e}", exc_info=True)
+        logger.error(f"Error loading subscribed users: {e}")
         return set()
 
-# Сохранение seen_ids в Redis
 def save_seen_ids():
     try:
         redis_client.set("seen_ids", json.dumps(list(seen_ids)))
         logger.info(f"Saved seen_ids: {len(seen_ids)} entries")
     except Exception as e:
-        logger.error(f"Error saving seen_ids: {e}", exc_info=True)
+        logger.error(f"Error saving seen_ids: {e}")
 
-# Загрузка seen_ids из Redis
 def load_seen_ids():
     try:
         ids_data = redis_client.get("seen_ids")
-        if ids_data:
-            return set(json.loads(ids_data))
-        return set()
+        return set(json.loads(ids_data)) if ids_data else set()
     except Exception as e:
-        logger.error(f"Error loading seen_ids: {e}", exc_info=True)
+        logger.error(f"Error loading seen_ids: {e}")
         return set()
 
-# Функция парсинга объявлений с cloudscraper
 def parse_myhome(bot, loop):
-    scraper = cloudscraper.create_scraper()
+    scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
     try:
         for chat_id in subscribed_users:
             filters = load_filters(chat_id)
-            city = filters.get("city", "1")
-            deal_type = filters.get("deal_type", "0")
-            price_from = filters.get("price_from", 100)
-            price_to = filters.get("price_to", 2000)
-            floor_from = filters.get("floor_from", 1)
-            floor_to = filters.get("floor_to", 30)
-            rooms_from = filters.get("rooms_from", 1)
-            rooms_to = filters.get("rooms_to", 5)
-            bedrooms_from = filters.get("bedrooms_from", 1)
-            bedrooms_to = filters.get("bedrooms_to", 2)
-            own_ads = filters.get("own_ads", "1")
+            defaults = {'city': '1', 'deal_type': 'rent', 'price_from': 100, 'price_to': 2000, 'floor_from': 1, 'floor_to': 30,
+                        'rooms_from': 1, 'rooms_to': 5, 'bedrooms_from': 1, 'bedrooms_to': 2, 'own_ads': '1'}
+            for key, value in defaults.items():
+                filters.setdefault(key, value)
 
-            pr_type = ""
-            if deal_type == "rent":
-                pr_type = "1"
-            elif deal_type == "sale":
-                pr_type = "2"
-
-            url = (
-                f"https://www.myhome.ge/ru/s?Keyword=&Owner={own_ads}&PrTypeID={pr_type}&CityID={city}&Furnished=&KeywordType=False&Sort=4"
-                f"&PriceFrom={price_from}&PriceTo={price_to}"
-                f"&FloorFrom={floor_from}&FloorTo={floor_to}"
-                f"&RoomNumFrom={rooms_from}&RoomNumTo={rooms_to}"
-                f"&BedroomNumFrom={bedrooms_from}&BedroomNumTo={bedrooms_to}"
-            )
+            pr_type = "1" if filters['deal_type'] == "rent" else "2" if filters['deal_type'] == "sale" else "1"
+            url = (f"https://www.myhome.ge/ru/s?Keyword=&Owner={filters['own_ads']}&PrTypeID={pr_type}&CityID={filters['city']}"
+                   f"&Furnished=&KeywordType=False&Sort=4&PriceFrom={filters['price_from']}&PriceTo={filters['price_to']}"
+                   f"&FloorFrom={filters['floor_from']}&FloorTo={filters['floor_to']}&RoomNumFrom={filters['rooms_from']}"
+                   f"&RoomNumTo={filters['rooms_to']}&BedroomNumFrom={filters['bedrooms_from']}&BedroomNumTo={filters['bedrooms_to']}")
 
             for attempt in range(3):
                 try:
-                    logger.info(f"Fetching page for chat {chat_id} (attempt {attempt + 1}/3): {url}")
-                    response = scraper.get(url)
+                    logger.info(f"Fetching page for {chat_id} (attempt {attempt + 1}/3): {url}")
+                    response = scraper.get(url, timeout=30)
+                    logger.debug(f"Response status: {response.status_code}")
                     response.raise_for_status()
-                    
-                    # Проверяем наличие Cloudflare
-                    if "Just a moment..." in response.text:
-                        logger.warning(f"Cloudflare detected for chat {chat_id}. Skipping URL.")
+
+                    if "Just a moment..." in response.text or "Checking your browser" in response.text:
+                        logger.warning(f"Cloudflare detected for {chat_id}. Response: {response.text[:200]}")
                         break
 
-                    # Парсим HTML
                     soup = BeautifulSoup(response.text, 'html.parser')
-                    listings = soup.find_all('div', class_='statement-card')
+                    listings = soup.find_all('div', class_='statement-card') or soup.find_all('div', class_='card-container')
+                    logger.debug(f"Found {len(listings)} listings with selectors 'statement-card' or 'card-container'")
 
                     if not listings:
-                        logger.info(f"No listings found for chat {chat_id} with filters: {filters}")
+                        logger.info(f"No listings found for {chat_id} with filters: {filters}")
+                        logger.debug(f"Page HTML snippet: {response.text[:500]}")
                         break
 
-                    logger.debug(f"Found {len(listings)} listings for chat {chat_id}")
                     for listing in listings:
                         try:
                             link_tag = listing.find('a', class_='card-container-link')
@@ -193,55 +146,37 @@ def parse_myhome(bot, loop):
                                 continue
 
                             title_tag = listing.find('div', class_='card-title')
-                            title = title_tag.text.strip() if title_tag else "Без заголовка"
-
                             price_tag = listing.find('div', class_='card-price')
-                            price = price_tag.text.strip() if price_tag else "Цена не указана"
-
                             location_tag = listing.find('div', class_='card-address')
-                            location = location_tag.text.strip() if location_tag else "Местоположение не указано"
 
-                            phone = "Телефон скрыт (нужен доступ к странице)"
-
-                            message = (
-                                f"Новое объявление:\n"
-                                f"Заголовок: {title}\n"
-                                f"Цена: {price}\n"
-                                f"Местоположение: {location}\n"
-                                f"Телефон: {phone}\n"
-                                f"Ссылка: {link}"
-                            )
-                            logger.info(f"Найдено объявление для chat {chat_id}: {title}")
+                            message = (f"Новое объявление:\n"
+                                       f"Заголовок: {title_tag.text.strip() if title_tag else 'Без заголовка'}\n"
+                                       f"Цена: {price_tag.text.strip() if price_tag else 'Цена не указана'}\n"
+                                       f"Местоположение: {location_tag.text.strip() if location_tag else 'Местоположение не указано'}\n"
+                                       f"Телефон: Телефон скрыт\n"
+                                       f"Ссылка: {link}")
+                            logger.info(f"Найдено объявление для {chat_id}: {title_tag.text.strip() if title_tag else 'Без заголовка'}")
 
                             future = asyncio.run_coroutine_threadsafe(
-                                send_message(bot, chat_id, message, get_settings_keyboard()),
-                                loop
-                            )
-                            try:
-                                future.result(timeout=5)
-                                logger.debug(f"Message sent to {chat_id}")
-                            except Exception as e:
-                                logger.error(f"Failed to send message to {chat_id}: {e}", exc_info=True)
+                                send_message(bot, chat_id, message, get_settings_keyboard()), loop)
+                            future.result(timeout=5)
 
                             seen_ids.add(listing_id)
                             save_seen_ids()
 
                         except Exception as e:
-                            logger.error(f"Ошибка парсинга объявления для chat {chat_id}: {e}", exc_info=True)
+                            logger.error(f"Ошибка парсинга объявления для {chat_id}: {e}")
 
-                    break  # Успешно загрузили страницу
+                    break
                 except Exception as e:
-                    logger.error(f"Error loading page for chat {chat_id} on attempt {attempt + 1}: {e}", exc_info=True)
-                    time.sleep(5)
+                    logger.error(f"Error loading page for {chat_id} on attempt {attempt + 1}: {e}")
+                    time.sleep(random.uniform(5, 10))
                     continue
-
             else:
-                logger.error(f"Failed to load page for chat {chat_id} after 3 attempts")
-
+                logger.error(f"Failed to load page for {chat_id} after 3 attempts")
     except Exception as e:
-        logger.error(f"Failed to parse myhome.ge: {e}", exc_info=True)
+        logger.error(f"Failed to parse myhome.ge: {e}")
 
-# Функция периодического парсинга
 def run_parser(bot, loop):
     global subscribed_users, seen_ids
     subscribed_users = load_subscribed_users()
@@ -251,37 +186,37 @@ def run_parser(bot, loop):
             logger.info("Проверка новых объявлений на myhome.ge...")
             parse_myhome(bot, loop)
         except Exception as e:
-            logger.error(f"Error in parser loop: {e}", exc_info=True)
-        time.sleep(600)  # 10 минут
+            logger.error(f"Error in parser loop: {e}")
+        time.sleep(600)
 
-# Команда /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     args = context.args
 
     if args and args[0].startswith("filters_"):
         params_str = args[0].replace("filters_", "")
-        params = dict(param.split("=") for param in params_str.split("&"))
+        params = dict(param.split("=") for param in params_str.split("&") if "=" in param)
         
         filters = load_filters(chat_id)
-        filters["city"] = params.get("city", "1")
-        filters["deal_type"] = params.get("deal_type", "0")
-        filters["price_from"] = int(params.get("price_from", 100))
-        filters["price_to"] = int(params.get("price_to", 2000))
-        filters["floor_from"] = int(params.get("floor_from", 1))
-        filters["floor_to"] = int(params.get("floor_to", 30))
-        filters["rooms_from"] = int(params.get("rooms_from", 1))
-        filters["rooms_to"] = int(params.get("rooms_to", 5))
-        filters["bedrooms_from"] = int(params.get("bedrooms_from", 1))
-        filters["bedrooms_to"] = int(params.get("bedrooms_to", 2))
-        filters["own_ads"] = params.get("own_ads", "1")
+        defaults = {'city': filters.get('city', '1'), 'deal_type': filters.get('deal_type', 'rent'),
+                    'price_from': filters.get('price_from', 100), 'price_to': filters.get('price_to', 2000),
+                    'floor_from': filters.get('floor_from', 1), 'floor_to': filters.get('floor_to', 30),
+                    'rooms_from': filters.get('rooms_from', 1), 'rooms_to': filters.get('rooms_to', 5),
+                    'bedrooms_from': filters.get('bedrooms_from', 1), 'bedrooms_to': filters.get('bedrooms_to', 2),
+                    'own_ads': filters.get('own_ads', '1')}
         
-        save_filters(chat_id, filters)
-        logger.info(f"User {chat_id} updated filters via deep link: {filters}")
+        for key in defaults:
+            if key in params:
+                filters[key] = params[key] if key in ['city', 'deal_type', 'own_ads'] else int(params[key])
+            else:
+                filters[key] = defaults[key]
 
-        city_name = {"0": "Искать везде", "1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}.get(filters["city"], "Неизвестный город")
-        deal_type_name = {"0": "Искать везде", "rent": "Аренда", "sale": "Продажа"}.get(filters["deal_type"], "Неизвестный тип")
-        own_ads_name = "Да" if filters["own_ads"] == "1" else "Нет"
+        save_filters(chat_id, filters)
+        logger.info(f"User {chat_id} updated filters: {filters}")
+
+        city_name = {"0": "Искать везде", "1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}.get(filters['city'], "Неизвестный город")
+        deal_type_name = {"rent": "Аренда", "sale": "Продажа"}.get(filters['deal_type'], "Искать везде")
+        own_ads_name = "Да" if filters['own_ads'] == "1" else "Нет"
 
         await update.message.reply_text(
             f"Фильтры обновлены:\n"
@@ -300,69 +235,58 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         filters["city"] = city_id
         save_filters(chat_id, filters)
         city_name = {"1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}.get(city_id, "Неизвестный город")
-        logger.info(f"User {chat_id} set city to {city_id} via deep link")
-        await update.message.reply_text(
-            f"Город обновлен: {city_name}!",
-            reply_markup=get_settings_keyboard()
-        )
+        logger.info(f"User {chat_id} set city to {city_id}")
+        await update.message.reply_text(f"Город обновлен: {city_name}!", reply_markup=get_settings_keyboard())
     else:
         if chat_id not in subscribed_users:
             await update.message.reply_text(
-                "Привет! Я могу рассылать новые объявления об аренде или продаже квартиры, если они подходят под твой фильтр.\n\n"
-                "Нажми 'Включить бот', чтобы начать получать уведомления.",
-                reply_markup=None
-            )
+                "Привет! Я могу рассылать новые объявления об аренде или продаже квартиры.\n\n"
+                "Нажми 'Включить бот'.", reply_markup=None)
             return
         logger.info(f"User {chat_id} started the bot")
         await update.message.reply_text(
-            "Привет! Я могу рассылать новые объявления об аренде или продаже квартиры, если они подходят под твой фильтр.\n\n"
-            "Нажми 'Открыть настройки', чтобы настроить фильтры:",
-            reply_markup=get_settings_keyboard()
-        )
+            "Привет! Я могу рассылать новые объявления об аренде или продаже квартиры.\n\n"
+            "Нажми 'Открыть настройки':", reply_markup=get_settings_keyboard())
 
-# Команда /on
-async def enable_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def enable_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     subscribed_users.add(chat_id)
     save_subscribed_users()
     logger.info(f"User {chat_id} enabled the bot")
     await update.message.reply_text(
-        "Бот включен! Теперь ты будешь получать уведомления о новых объявлениях.\n\n"
-        "Нажми 'Открыть настройки', чтобы настроить фильтры:",
-        reply_markup=get_settings_keyboard()
-    )
+        "Бот включен! Теперь ты будешь получать уведомления.\n\nНажми 'Открыть настройки':",
+        reply_markup=get_settings_keyboard())
 
-# Команда /off
-async def disable_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def disable_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     subscribed_users.discard(chat_id)
     save_subscribed_users()
     logger.info(f"User {chat_id} disabled the bot")
     await update.message.reply_text(
-        "Бот отключен. Ты больше не будешь получать уведомления.\n\n"
-        "Нажми 'Включить бот', чтобы снова начать получать уведомления.",
-        reply_markup=None
-    )
+        "Бот отключен. Нажми 'Включить бот'.", reply_markup=None)
 
-# Команда /settings
-async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     if chat_id not in subscribed_users:
-        await update.message.reply_text(
-            "Бот отключен. Нажми 'Включить бот', чтобы начать получать уведомления.",
-            reply_markup=None
-        )
+        await update.message.reply_text("Бот отключен. Нажми 'Включить бот'.", reply_markup=None)
         return
-    await update.message.reply_text(
-        "Нажми 'Открыть настройки', чтобы настроить фильтры:",
-        reply_markup=get_settings_keyboard()
-    )
+    await update.message.reply_text("Нажми 'Открыть настройки':", reply_markup=get_settings_keyboard())
 
-# Обработчик всех обновлений для отладки
-async def debug_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def reset_seen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global seen_ids
+    chat_id = update.message.chat_id
+    seen_ids.clear()
+    try:
+        redis_client.delete("seen_ids")
+        logger.info(f"User {chat_id} reset seen_ids")
+        await update.message.reply_text("Список объявлений сброшен. Бот начнёт парсинг заново.")
+    except Exception as e:
+        logger.error(f"Error resetting seen_ids for {chat_id}: {e}")
+        await update.message.reply_text("Ошибка при сбросе списка.")
+
+async def debug_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.debug(f"Получено обновление: {update.to_dict()}")
 
-# Основная функция
 def main():
     try:
         application = Application.builder().token(TOKEN).build()
@@ -372,24 +296,21 @@ def main():
         application.add_handler(CommandHandler("on", enable_bot))
         application.add_handler(CommandHandler("off", disable_bot))
         application.add_handler(CommandHandler("settings", settings))
+        application.add_handler(CommandHandler("reset_seen", reset_seen))
         application.add_handler(MessageHandler(filters.ALL, debug_update), group=1)
 
         parser_thread = threading.Thread(target=run_parser, args=(application.bot, loop))
         parser_thread.daemon = True
         parser_thread.start()
 
-        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+        webhook_url = f"https://{RENDER_HOSTNAME}/{TOKEN}"
         logger.info(f"Setting webhook to {webhook_url}")
         application.run_webhook(
-            listen="0.0.0.0",
-            port=10000,
-            url_path=TOKEN,
-            webhook_url=webhook_url,
+            listen="0.0.0.0", port=10000, url_path=TOKEN, webhook_url=webhook_url,
             allowed_updates=["message", "callback_query"]
         )
-
     except Exception as e:
-        logger.error(f"Error in main loop: {e}", exc_info=True)
+        logger.error(f"Error in main loop: {e}")
         raise
 
 if __name__ == "__main__":
