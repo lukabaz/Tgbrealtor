@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 import threading
 import time
 import random
+import subprocess
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import undetected_chromedriver as uc
@@ -148,12 +149,15 @@ def setup_driver():
     )
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.binary_location = "/usr/bin/google-chrome"  # Явно указываем путь
 
     try:
-        # Оставляем Selenium Manager управлять ChromeDriver
+        # Проверяем версию Chrome
+        chrome_version = subprocess.getoutput("google-chrome --version") or "unknown"
+        logger.debug(f"Google Chrome version: {chrome_version}")
         driver = uc.Chrome(options=options, use_subprocess=True)
         logger.info(f"Selenium WebDriver initialized successfully with undetected-chromedriver")
-        logger.debug(f"Chrome version: {driver.capabilities.get('browserVersion', 'unknown')}")
+        logger.debug(f"Chrome version from driver: {driver.capabilities.get('browserVersion', 'unknown')}")
         return driver
     except WebDriverException as e:
         logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
@@ -309,7 +313,7 @@ def run_parser(bot, loop):
             parse_myhome(bot, loop)
         except Exception as e:
             logger.error(f"Error in parser loop: {e}", exc_info=True)
-        time.sleep(600)  # Увеличено до 10 минут для снижения нагрузки
+        time.sleep(300)  # 10 минут
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
