@@ -10,7 +10,7 @@ import time
 import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import undetected_chromedriver as uc  # Используем undetected-chromedriver
+import undetected_chromedriver as uc
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -150,12 +150,16 @@ def setup_driver():
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
 
     try:
+        # Оставляем Selenium Manager управлять ChromeDriver
         driver = uc.Chrome(options=options, use_subprocess=True)
         logger.info(f"Selenium WebDriver initialized successfully with undetected-chromedriver")
         logger.debug(f"Chrome version: {driver.capabilities.get('browserVersion', 'unknown')}")
         return driver
     except WebDriverException as e:
         logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in setup_driver: {e}", exc_info=True)
         raise
 
 # Функция парсинга объявлений с учетом фильтров
@@ -191,7 +195,7 @@ def parse_myhome(bot, loop):
                 f"&BedroomNumFrom={bedrooms_from}&BedroomNumTo={bedrooms_to}"
             )
 
-            for attempt in range(5):  # Увеличено до 5 попыток
+            for attempt in range(5):
                 try:
                     logger.info(f"Fetching page for chat {chat_id} (attempt {attempt + 1}/5): {url}")
                     driver.get(url)
@@ -210,7 +214,7 @@ def parse_myhome(bot, loop):
                     break
                 except TimeoutException:
                     logger.warning(f"Timeout waiting for listings for chat {chat_id}. Page source: {driver.page_source[:500]}...")
-                    time.sleep(5)  # Задержка перед повторной попыткой
+                    time.sleep(5)
                     continue
                 except Exception as e:
                     logger.error(f"Error loading page for chat {chat_id} on attempt {attempt + 1}: {e}", exc_info=True)
@@ -305,7 +309,7 @@ def run_parser(bot, loop):
             parse_myhome(bot, loop)
         except Exception as e:
             logger.error(f"Error in parser loop: {e}", exc_info=True)
-        time.sleep(300)
+        time.sleep(600)  # Увеличено до 10 минут для снижения нагрузки
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
