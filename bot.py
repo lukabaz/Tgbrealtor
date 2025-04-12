@@ -11,19 +11,33 @@ import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Настройка логирования с большей детализацией
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('bot.log')  # Логи в файл для отладки на Render
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Токен от BotFather
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+if not TOKEN:
+    logger.error("TELEGRAM_TOKEN environment variable is not set")
+    raise ValueError("TELEGRAM_TOKEN is required")
 
 # Подключение к Redis
 redis_url = os.getenv("REDIS_URL")
+if not redis_url:
+    logger.error("REDIS_URL environment variable is not set")
+    raise ValueError("REDIS_URL is required")
 redis_client = redis.from_url(redis_url, decode_responses=True)
 
 # Список пользователей, которые подписались на уведомления
@@ -34,7 +48,16 @@ seen_ids = set()
 
 # Асинхронная функция для отправки сообщений в Telegram
 async def send_message(bot, chat_id: int, message: str, reply_markup=None):
-    await bot.send_message(chat_id=chat_id, text=message, reply_markup=reply_markup, disable_web_page_preview=True)
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=reply_markup,
+            disable_web_page_preview=True
+        )
+        logger.debug(f"Message sent to chat {chat_id}")
+    except Exception as e:
+        logger.error(f"Failed to send message to chat {chat_id}: {e}")
 
 # Создание клавиатуры для открытия Web App
 def get_settings_keyboard():
@@ -103,21 +126,24 @@ def load_seen_ids():
 # Настройка Selenium WebDriver
 def setup_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Запуск в фоновом режиме
+    chrome_options.add_argument("--headless=new")  # Новый headless-режим
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    chrome_options.add_argument("--log-level=DEBUG")
+    chrome_options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.126 Safari/537.36"
+    )
+    
+    # Явно указываем путь к Chrome binary
+    chrome_options.binary_location = "/opt/chrome-linux64/chrome"
     
     try:
-        # Используем webdriver_manager без указания версии
-        driver_path = ChromeDriverManager(driver_version="114.0.5735.90").install()
-        logger.info(f"ChromeDriver installed at: {driver_path}")
-        driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
-        logger.info("Selenium WebDriver initialized successfully")
+        driver = webdriver.Chrome(options=chrome_options)
+        logger.info(f"Selenium WebDriver initialized successfully. ChromeDriver path: {driver.service.path}")
         return driver
     except Exception as e:
-        logger.error(f"Failed to setup ChromeDriver with webdriver_manager: {e}")
+        logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
         raise
 
 # Функция парсинга объявлений с учетом фильтров
@@ -125,7 +151,7 @@ def parse_myhome(bot, loop):
     try:
         driver = setup_driver()
     except Exception as e:
-        logger.error(f"Failed to setup Selenium driver: {e}")
+        logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
         return  # Пропускаем парсинг, если драйвер не запустился
 
     try:
@@ -161,8 +187,12 @@ def parse_myhome(bot, loop):
             try:
                 logger.info(f"Fetching page for chat {chat_id}: {url}")
                 driver.get(url)
-                # Даём время на загрузку страницы и выполнение JavaScript (увеличиваем время для Cloudflare)
-                time.sleep(10)
+                
+                # Ожидаем загрузки объявлений (защита от Cloudflare)
+                WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "statement-card"))
+                )
+                logger.debug(f"Page loaded successfully for chat {chat_id}")
 
                 # Получаем HTML-код страницы
                 page_source = driver.page_source
@@ -226,13 +256,14 @@ def parse_myhome(bot, loop):
                         save_seen_ids()
 
                     except Exception as e:
-                        logger.error(f"Ошибка парсинга объявления для chat {chat_id}: {e}")
+                        logger.error(f"Ошибка парсинга объявления для chat {chat_id}: {e}", exc_info=True)
 
             except Exception as e:
-                logger.error(f"Ошибка при загрузке страницы для chat {chat_id}: {e}")
+                logger.error(f"Ошибка при загрузке страницы для chat {chat_id}: {e}", exc_info=True)
 
     finally:
         driver.quit()
+        logger.debug("WebDriver closed")
 
 # Функция периодического парсинга
 def run_parser(bot, loop):
@@ -245,7 +276,7 @@ def run_parser(bot, loop):
             logger.info("Проверка новых объявлений на myhome.ge...")
             parse_myhome(bot, loop)
         except Exception as e:
-            logger.error(f"Error in parser loop: {e}")
+            logger.error(f"Error in parser loop: {e}", exc_info=True)
         time.sleep(300)  # Проверка каждые 5 минут
 
 # Команда /start
@@ -360,35 +391,40 @@ async def debug_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 # Основная функция
 def main():
-    # Создаем приложение
-    application = Application.builder().token(TOKEN).build()
+    try:
+        # Создаем приложение
+        application = Application.builder().token(TOKEN).build()
 
-    # Получаем цикл событий
-    loop = asyncio.get_event_loop()
+        # Получаем цикл событий
+        loop = asyncio.get_event_loop()
 
-    # Регистрация обработчиков
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("on", enable_bot))
-    application.add_handler(CommandHandler("off", disable_bot))
-    application.add_handler(CommandHandler("settings", settings))
-    # Добавляем обработчик для всех обновлений
-    application.add_handler(MessageHandler(filters.ALL, debug_update), group=1)
+        # Регистрация обработчиков
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("on", enable_bot))
+        application.add_handler(CommandHandler("off", disable_bot))
+        application.add_handler(CommandHandler("settings", settings))
+        # Добавляем обработчик для всех обновлений
+        application.add_handler(MessageHandler(filters.ALL, debug_update), group=1)
 
-    # Запуск парсера в отдельном потоке
-    parser_thread = threading.Thread(target=run_parser, args=(application.bot, loop))
-    parser_thread.daemon = True
-    parser_thread.start()
+        # Запуск парсера в отдельном потоке
+        parser_thread = threading.Thread(target=run_parser, args=(application.bot, loop))
+        parser_thread.daemon = True
+        parser_thread.start()
 
-    # Настройка вебхука
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
-    logger.info(f"Setting webhook to {webhook_url}")
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=10000,
-        url_path=TOKEN,
-        webhook_url=webhook_url,
-        allowed_updates=["message", "callback_query"]
-    )
+        # Настройка вебхука для Render
+        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+        logger.info(f"Setting webhook to {webhook_url}")
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=10000,
+            url_path=TOKEN,
+            webhook_url=webhook_url,
+            allowed_updates=["message", "callback_query"]
+        )
+
+    except Exception as e:
+        logger.error(f"Error in main loop: {e}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     main()
