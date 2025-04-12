@@ -171,6 +171,7 @@ def run_parser(bot, loop):
 
 # Обработчик данных от Web App
 async def web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.debug(f"Получено обновление от Web App: {update.to_dict()}")
     chat_id = update.message.chat_id
     logger.debug(f"Получены данные от Web App для chat {chat_id}")
     data = update.message.web_app_data.data
