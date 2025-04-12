@@ -8,15 +8,9 @@ from bs4 import BeautifulSoup
 import threading
 import time
 import random
-import subprocess
+import cloudscraper
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import undetected_chromedriver as uc
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.common.exceptions import TimeoutException, WebDriverException
 
 # Настройка логирования
 logging.basicConfig(
@@ -33,12 +27,11 @@ logger = logging.getLogger(__name__)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
-logging.getLogger('selenium').setLevel(logging.WARNING)
+logging.getLogger('cloudscraper').setLevel(logging.WARNING)
 logging.getLogger('telegram').setLevel(logging.WARNING)
-logging.getLogger('undetected_chromedriver').setLevel(logging.WARNING)
 
 # Включаем DEBUG только для __main__
-logging.getLogger(__name__).setLevel(logging.DEBUG)
+logging.getLogger("__main__").setLevel(logging.DEBUG)
 
 # Токен от BotFather
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -136,48 +129,10 @@ def load_seen_ids():
         logger.error(f"Error loading seen_ids: {e}", exc_info=True)
         return set()
 
-# Настройка Selenium WebDriver с undetected-chromedriver
-def setup_driver():
-    options = uc.ChromeOptions()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-software-rasterizer")
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.7049.84 Safari/537.36"
-    )
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-
-    # Проверяем доступность Chrome
-    chrome_path = "/usr/bin/google-chrome"
-    try:
-        chrome_version = subprocess.getoutput(f"{chrome_path} --version") or "unknown"
-        logger.debug(f"Google Chrome version: {chrome_version}")
-        logger.debug(f"Chrome binary exists: {os.path.exists(chrome_path)}")
-        options.binary_location = chrome_path
-    except Exception as e:
-        logger.error(f"Failed to check Chrome version: {e}", exc_info=True)
-        raise FileNotFoundError(f"Chrome not found at {chrome_path}")
-
-    try:
-        driver = uc.Chrome(options=options, use_subprocess=True)
-        logger.info(f"Selenium WebDriver initialized successfully with undetected-chromedriver")
-        logger.debug(f"Chrome version from driver: {driver.capabilities.get('browserVersion', 'unknown')}")
-        return driver
-    except WebDriverException as e:
-        logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in setup_driver: {e}", exc_info=True)
-        raise
-
-# Функция парсинга объявлений с учетом фильтров
+# Функция парсинга объявлений с cloudscraper
 def parse_myhome(bot, loop):
-    driver = None
+    scraper = cloudscraper.create_scraper()
     try:
-        driver = setup_driver()
         for chat_id in subscribed_users:
             filters = load_filters(chat_id)
             city = filters.get("city", "1")
@@ -206,108 +161,85 @@ def parse_myhome(bot, loop):
                 f"&BedroomNumFrom={bedrooms_from}&BedroomNumTo={bedrooms_to}"
             )
 
-            for attempt in range(5):
+            for attempt in range(3):
                 try:
-                    logger.info(f"Fetching page for chat {chat_id} (attempt {attempt + 1}/5): {url}")
-                    driver.get(url)
+                    logger.info(f"Fetching page for chat {chat_id} (attempt {attempt + 1}/3): {url}")
+                    response = scraper.get(url)
+                    response.raise_for_status()
                     
-                    # Случайная задержка для имитации поведения пользователя
-                    time.sleep(random.uniform(2, 5))
-                    # Имитация прокрутки страницы
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 2);")
-                    time.sleep(random.uniform(1, 3))
-                    
-                    # Ожидаем загрузки объявлений
-                    WebDriverWait(driver, 60).until(
-                        EC.presence_of_element_located((By.CLASS_NAME, "statement-card"))
-                    )
-                    logger.debug(f"Page loaded successfully for chat {chat_id}")
-                    break
-                except TimeoutException:
-                    logger.warning(f"Timeout waiting for listings for chat {chat_id}. Page source: {driver.page_source[:500]}...")
-                    time.sleep(5)
-                    continue
+                    # Проверяем наличие Cloudflare
+                    if "Just a moment..." in response.text:
+                        logger.warning(f"Cloudflare detected for chat {chat_id}. Skipping URL.")
+                        break
+
+                    # Парсим HTML
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    listings = soup.find_all('div', class_='statement-card')
+
+                    if not listings:
+                        logger.info(f"No listings found for chat {chat_id} with filters: {filters}")
+                        break
+
+                    logger.debug(f"Found {len(listings)} listings for chat {chat_id}")
+                    for listing in listings:
+                        try:
+                            link_tag = listing.find('a', class_='card-container-link')
+                            if not link_tag:
+                                continue
+                            link = "https://www.myhome.ge" + link_tag['href']
+                            listing_id = link.split('/')[-1]
+
+                            if listing_id in seen_ids:
+                                continue
+
+                            title_tag = listing.find('div', class_='card-title')
+                            title = title_tag.text.strip() if title_tag else "Без заголовка"
+
+                            price_tag = listing.find('div', class_='card-price')
+                            price = price_tag.text.strip() if price_tag else "Цена не указана"
+
+                            location_tag = listing.find('div', class_='card-address')
+                            location = location_tag.text.strip() if location_tag else "Местоположение не указано"
+
+                            phone = "Телефон скрыт (нужен доступ к странице)"
+
+                            message = (
+                                f"Новое объявление:\n"
+                                f"Заголовок: {title}\n"
+                                f"Цена: {price}\n"
+                                f"Местоположение: {location}\n"
+                                f"Телефон: {phone}\n"
+                                f"Ссылка: {link}"
+                            )
+                            logger.info(f"Найдено объявление для chat {chat_id}: {title}")
+
+                            future = asyncio.run_coroutine_threadsafe(
+                                send_message(bot, chat_id, message, get_settings_keyboard()),
+                                loop
+                            )
+                            try:
+                                future.result(timeout=5)
+                                logger.debug(f"Message sent to {chat_id}")
+                            except Exception as e:
+                                logger.error(f"Failed to send message to {chat_id}: {e}", exc_info=True)
+
+                            seen_ids.add(listing_id)
+                            save_seen_ids()
+
+                        except Exception as e:
+                            logger.error(f"Ошибка парсинга объявления для chat {chat_id}: {e}", exc_info=True)
+
+                    break  # Успешно загрузили страницу
                 except Exception as e:
                     logger.error(f"Error loading page for chat {chat_id} on attempt {attempt + 1}: {e}", exc_info=True)
                     time.sleep(5)
                     continue
 
             else:
-                logger.error(f"Failed to load page for chat {chat_id} after 5 attempts")
-                continue
-
-            # Проверяем наличие Cloudflare
-            if "Just a moment..." in driver.page_source:
-                logger.warning(f"Cloudflare detected for chat {chat_id}. Skipping URL.")
-                continue
-
-            # Получаем HTML-код страницы
-            page_source = driver.page_source
-            soup = BeautifulSoup(page_source, 'html.parser')
-            listings = soup.find_all('div', class_='statement-card')
-
-            if not listings:
-                logger.info(f"No listings found for chat {chat_id} with filters: {filters}")
-                continue
-
-            logger.debug(f"Found {len(listings)} listings for chat {chat_id}")
-            for listing in listings:
-                try:
-                    link_tag = listing.find('a', class_='card-container-link')
-                    if not link_tag:
-                        continue
-                    link = "https://www.myhome.ge" + link_tag['href']
-                    listing_id = link.split('/')[-1]
-
-                    if listing_id in seen_ids:
-                        continue
-
-                    title_tag = listing.find('div', class_='card-title')
-                    title = title_tag.text.strip() if title_tag else "Без заголовка"
-
-                    price_tag = listing.find('div', class_='card-price')
-                    price = price_tag.text.strip() if price_tag else "Цена не указана"
-
-                    location_tag = listing.find('div', class_='card-address')
-                    location = location_tag.text.strip() if location_tag else "Местоположение не указано"
-
-                    phone = "Телефон скрыт (нужен Selenium)"
-
-                    message = (
-                        f"Новое объявление:\n"
-                        f"Заголовок: {title}\n"
-                        f"Цена: {price}\n"
-                        f"Местоположение: {location}\n"
-                        f"Телефон: {phone}\n"
-                        f"Ссылка: {link}"
-                    )
-                    logger.info(f"Найдено объявление для chat {chat_id}: {title}")
-
-                    future = asyncio.run_coroutine_threadsafe(
-                        send_message(bot, chat_id, message, get_settings_keyboard()),
-                        loop
-                    )
-                    try:
-                        future.result(timeout=5)
-                        logger.debug(f"Message sent to {chat_id}")
-                    except Exception as e:
-                        logger.error(f"Failed to send message to {chat_id}: {e}", exc_info=True)
-
-                    seen_ids.add(listing_id)
-                    save_seen_ids()
-
-                except Exception as e:
-                    logger.error(f"Ошибка парсинга объявления для chat {chat_id}: {e}", exc_info=True)
+                logger.error(f"Failed to load page for chat {chat_id} after 3 attempts")
 
     except Exception as e:
         logger.error(f"Failed to parse myhome.ge: {e}", exc_info=True)
-    finally:
-        if driver:
-            try:
-                driver.quit()
-                logger.debug("WebDriver closed")
-            except Exception as e:
-                logger.error(f"Error closing WebDriver: {e}", exc_info=True)
 
 # Функция периодического парсинга
 def run_parser(bot, loop):
