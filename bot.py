@@ -15,14 +15,15 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
-# Настройка логирования с большей детализацией
+# Настройка логирования
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('bot.log')  # Логи в файл для отладки на Render
+        logging.FileHandler('bot.log')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -126,23 +127,25 @@ def load_seen_ids():
 # Настройка Selenium WebDriver
 def setup_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless=new")  # Новый headless-режим
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--log-level=DEBUG")
     chrome_options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.126 Safari/537.36"
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.7049.84 Safari/537.36"
     )
-    
-    # Явно указываем путь к Chrome binary
-    chrome_options.binary_location = "/opt/chrome-linux64/chrome"
-    
+    # Опции для обхода Cloudflare
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+
     try:
         driver = webdriver.Chrome(options=chrome_options)
         logger.info(f"Selenium WebDriver initialized successfully. ChromeDriver path: {driver.service.path}")
+        logger.debug(f"Chrome version: {driver.capabilities['browserVersion']}")
+        logger.debug(f"Chrome binary: {driver.capabilities['chrome']['binary']}")
         return driver
-    except Exception as e:
+    except WebDriverException as e:
         logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
         raise
 
@@ -152,13 +155,13 @@ def parse_myhome(bot, loop):
         driver = setup_driver()
     except Exception as e:
         logger.error(f"Failed to setup Selenium driver: {e}", exc_info=True)
-        return  # Пропускаем парсинг, если драйвер не запустился
+        return
 
     try:
         for chat_id in subscribed_users:
             filters = load_filters(chat_id)
-            city = filters.get("city", "1")  # По умолчанию Тбилиси
-            deal_type = filters.get("deal_type", "0")  # 0 - Искать везде, rent - Аренда, sale - Продажа
+            city = filters.get("city", "1")
+            deal_type = filters.get("deal_type", "0")
             price_from = filters.get("price_from", 100)
             price_to = filters.get("price_to", 2000)
             floor_from = filters.get("floor_from", 1)
@@ -167,14 +170,13 @@ def parse_myhome(bot, loop):
             rooms_to = filters.get("rooms_to", 5)
             bedrooms_from = filters.get("bedrooms_from", 1)
             bedrooms_to = filters.get("bedrooms_to", 2)
-            own_ads = filters.get("own_ads", "1")  # По умолчанию только собственники
+            own_ads = filters.get("own_ads", "1")
 
-            # Формируем URL с фильтрами
             pr_type = ""
             if deal_type == "rent":
-                pr_type = "1"  # Аренда
+                pr_type = "1"
             elif deal_type == "sale":
-                pr_type = "2"  # Продажа
+                pr_type = "2"
 
             url = (
                 f"https://www.myhome.ge/ru/s?Keyword=&Owner={own_ads}&PrTypeID={pr_type}&CityID={city}&Furnished=&KeywordType=False&Sort=4"
@@ -188,11 +190,20 @@ def parse_myhome(bot, loop):
                 logger.info(f"Fetching page for chat {chat_id}: {url}")
                 driver.get(url)
                 
-                # Ожидаем загрузки объявлений (защита от Cloudflare)
-                WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "statement-card"))
-                )
-                logger.debug(f"Page loaded successfully for chat {chat_id}")
+                # Ожидаем загрузки объявлений
+                try:
+                    WebDriverWait(driver, 60).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, "statement-card"))
+                    )
+                    logger.debug(f"Page loaded successfully for chat {chat_id}")
+                except TimeoutException:
+                    logger.warning(f"Timeout waiting for listings for chat {chat_id}. Page source: {driver.page_source[:1000]}...")
+                    continue
+
+                # Проверяем наличие Cloudflare
+                if "Just a moment..." in driver.page_source:
+                    logger.warning(f"Cloudflare detected for chatошибка! Cloudflare challenge page loaded.")
+                    continue
 
                 # Получаем HTML-код страницы
                 page_source = driver.page_source
@@ -200,12 +211,12 @@ def parse_myhome(bot, loop):
                 listings = soup.find_all('div', class_='statement-card')
 
                 if not listings:
-                    logger.warning(f"No listings found for chat {chat_id}. Page may not have loaded correctly.")
+                    logger.warning(f"No listings found for chat {chat_id}. Page source: {page_source[:1000]}...")
                     continue
 
+                logger.debug(f"Found {len(listings)} listings for chat {chat_id}")
                 for listing in listings:
                     try:
-                        # ID объявления
                         link_tag = listing.find('a', class_='card-container-link')
                         if not link_tag:
                             continue
@@ -215,22 +226,17 @@ def parse_myhome(bot, loop):
                         if listing_id in seen_ids:
                             continue
 
-                        # Заголовок
                         title_tag = listing.find('div', class_='card-title')
                         title = title_tag.text.strip() if title_tag else "Без заголовка"
 
-                        # Цена
                         price_tag = listing.find('div', class_='card-price')
                         price = price_tag.text.strip() if price_tag else "Цена не указана"
 
-                        # Местоположение
                         location_tag = listing.find('div', class_='card-address')
                         location = location_tag.text.strip() if location_tag else "Местоположение не указано"
 
-                        # Телефон (пока заглушка)
                         phone = "Телефон скрыт (нужен Selenium)"
 
-                        # Формируем сообщение
                         message = (
                             f"Новое объявление:\n"
                             f"Заголовок: {title}\n"
@@ -241,7 +247,6 @@ def parse_myhome(bot, loop):
                         )
                         logger.info(f"Найдено объявление для chat {chat_id}: {title}")
 
-                        # Отправляем пользователю
                         future = asyncio.run_coroutine_threadsafe(
                             send_message(bot, chat_id, message, get_settings_keyboard()),
                             loop
@@ -262,13 +267,15 @@ def parse_myhome(bot, loop):
                 logger.error(f"Ошибка при загрузке страницы для chat {chat_id}: {e}", exc_info=True)
 
     finally:
-        driver.quit()
-        logger.debug("WebDriver closed")
+        try:
+            driver.quit()
+            logger.debug("WebDriver closed")
+        except Exception as e:
+            logger.error(f"Error closing WebDriver: {e}")
 
 # Функция периодического парсинга
 def run_parser(bot, loop):
     global subscribed_users, seen_ids
-    # Загружаем данные из Redis при старте
     subscribed_users = load_subscribed_users()
     seen_ids = load_seen_ids()
     while True:
@@ -277,15 +284,14 @@ def run_parser(bot, loop):
             parse_myhome(bot, loop)
         except Exception as e:
             logger.error(f"Error in parser loop: {e}", exc_info=True)
-        time.sleep(300)  # Проверка каждые 5 минут
+        time.sleep(300)
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
-    args = context.args  # Получаем параметры из deep link
+    args = context.args
 
     if args and args[0].startswith("filters_"):
-        # Извлекаем фильтры из deep link
         params_str = args[0].replace("filters_", "")
         params = dict(param.split("=") for param in params_str.split("&"))
         
@@ -321,7 +327,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             reply_markup=get_settings_keyboard()
         )
     elif args and args[0].startswith("city_"):
-        # Обработка старого формата (только город)
         city_id = args[0].split("_")[1]
         filters = load_filters(chat_id)
         filters["city"] = city_id
@@ -392,26 +397,19 @@ async def debug_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # Основная функция
 def main():
     try:
-        # Создаем приложение
         application = Application.builder().token(TOKEN).build()
-
-        # Получаем цикл событий
         loop = asyncio.get_event_loop()
 
-        # Регистрация обработчиков
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("on", enable_bot))
         application.add_handler(CommandHandler("off", disable_bot))
         application.add_handler(CommandHandler("settings", settings))
-        # Добавляем обработчик для всех обновлений
         application.add_handler(MessageHandler(filters.ALL, debug_update), group=1)
 
-        # Запуск парсера в отдельном потоке
         parser_thread = threading.Thread(target=run_parser, args=(application.bot, loop))
         parser_thread.daemon = True
         parser_thread.start()
 
-        # Настройка вебхука для Render
         webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
         logger.info(f"Setting webhook to {webhook_url}")
         application.run_webhook(
