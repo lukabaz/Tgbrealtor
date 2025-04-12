@@ -35,7 +35,7 @@ def get_main_keyboard():
         [
             InlineKeyboardButton("Архив", callback_data="archive"),
             InlineKeyboardButton("Графики", callback_data="charts"),
-            InlineKeyboardButton("Настройки", callback_data="settings")
+            InlineKeyboardButton("Фильтры", callback_data="filters")  # Заменили "Настройки" на "Фильтры"
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -59,14 +59,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id = query.message.chat_id
     callback_data = query.data
 
-    if callback_data == "settings":
-        # Клавиатура с кнопкой "Запуск"
-        launch_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Запуск", web_app={"url": "https://realestatege.netlify.app/filters.html"})]  # Замените URL
+    if callback_data == "filters":
+        # Прямой переход в Web App
+        filters_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Фильтры", web_app={"url": "https://your-web-app-url"})]  # Замените URL
         ])
         await query.message.reply_text(
-            "Открывая это мини-приложение. Вы принимаете Условия использования мини-приложения.",
-            reply_markup=launch_keyboard
+            "Настройте фильтры для поиска объявлений.",
+            reply_markup=filters_keyboard
         )
     elif callback_data == "archive":
         await query.message.reply_text("Архив пока не реализован.")
@@ -86,13 +86,13 @@ def parse_myhome(bot, loop):
         bedrooms_from = filters.get("bedrooms_from", 1)
         bedrooms_to = filters.get("bedrooms_to", 2)
 
-        # Формируем URL с фильтрами (исправленные параметры)
+        # Формируем URL с фильтрами
         url = (
             f"https://www.myhome.ge/ru/s?Keyword=&Owner=1&PrTypeID=&CityID=&Furnished=&KeywordType=False&Sort=4"
             f"&PriceFrom={price_from}&PriceTo={price_to}"
             f"&FloorFrom={floor_from}&FloorTo={floor_to}"
-            f"&RoomNumFrom={rooms_from}&RoomNumTo={rooms_to}"  # Исправлено
-            f"&BedroomNumFrom={bedrooms_from}&BedroomNumTo={bedrooms_to}"  # Исправлено
+            f"&RoomNumFrom={rooms_from}&RoomNumTo={rooms_to}"
+            f"&BedroomNumFrom={bedrooms_from}&BedroomNumTo={bedrooms_to}"
         )
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
@@ -105,7 +105,7 @@ def parse_myhome(bot, loop):
             soup = BeautifulSoup(response.text, 'html.parser')
             listings = soup.find_all('div', class_='statement-card')
 
-            for listing in listings:  # Убрано ограничение на 5 объявлений
+            for listing in listings:
                 try:
                     # ID объявления
                     link_tag = listing.find('a', class_='card-container-link')
@@ -172,11 +172,13 @@ def run_parser(bot, loop):
 # Обработчик данных от Web App
 async def web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
+    logger.debug(f"Получены данные от Web App для chat {chat_id}")
     data = update.message.web_app_data.data
+    logger.debug(f"Сырые данные Web App: {data}")
     try:
         filters_data = json.loads(data)
         user_filters[chat_id] = filters_data
-        logger.info(f"Updated filters for chat {chat_id}: {filters_data}")
+        logger.info(f"Обновлены фильтры для chat {chat_id}: {filters_data}")
         await update.message.reply_text("Фильтры обновлены!", reply_markup=get_main_keyboard())
     except Exception as e:
         logger.error(f"Ошибка обработки данных Web App для chat {chat_id}: {e}")
