@@ -169,6 +169,10 @@ def run_parser(bot, loop):
         parse_myhome(bot, loop)
         time.sleep(300)  # Проверка каждые 5 минут
 
+# Обработчик всех обновлений для отладки
+async def debug_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.debug(f"Получено обновление: {update.to_dict()}")
+
 # Обработчик данных от Web App
 async def web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.debug(f"Получено обновление от Web App: {update.to_dict()}")
@@ -200,15 +204,17 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data))
+    # Добавляем обработчик для всех обновлений
+    application.add_handler(MessageHandler(filters.ALL, debug_update), group=1)
 
     # Запуск парсера в отдельном потоке
     parser_thread = threading.Thread(target=run_parser, args=(application.bot, loop))
     parser_thread.daemon = True
     parser_thread.start()
 
-    # Запускаем polling вместо вебхука
+    # Запускаем polling
     logger.info("Starting polling...")
-    application.run_polling(allowed_updates=["message", "callback_query", "web_app_data"])
+    application.run_polling(allowed_updates=["message", "callback_query"])
 
 if __name__ == "__main__":
     main()
