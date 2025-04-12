@@ -110,8 +110,8 @@ def setup_driver():
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
     
     try:
-        # Пробуем использовать webdriver_manager с конкретной версией ChromeDriver
-        driver_path = ChromeDriverManager(version="123.0.6312.122").install()
+        # Используем webdriver_manager без указания версии
+        driver_path = ChromeDriverManager(driver_version="114.0.5735.90").install()
         logger.info(f"ChromeDriver installed at: {driver_path}")
         driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
         logger.info("Selenium WebDriver initialized successfully")

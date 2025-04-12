@@ -27,8 +27,11 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Проверяем, что Chrome установлен
+RUN which google-chrome || echo "Google Chrome binary not found!"
+
 # Проверяем версию Chrome
-RUN google-chrome --version || echo "Chrome installation failed!"
+RUN google-chrome --version || echo "Failed to get Chrome version!"
 
 # Устанавливаем рабочую директорию
 WORKDIR /app
