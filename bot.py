@@ -140,19 +140,18 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"Received Web App data: {filters_data}")
             save_filters(chat_id, filters_data)
             response_message = format_filters_response(filters_data)
-            await send_message(context.bot, chat_id, response_message)
+            await send_message(context.bot, chat_id, response_message, reply_markup=get_settings_keyboard())
         except Exception as e:
             logger.error(f"Error processing web app data: {e}")
             await send_message(context.bot, chat_id, "Ошибка при сохранении фильтров.")
     else:
         logger.info(f"No web_app_data in update")
-        await send_message(context.bot, chat_id, "Пожалуйста, используйте Web App для настройки фильтров.")
+        await send_message(context.bot, chat_id, "Пожалуйста, используйте Web App для настройки фильтров.", reply_markup=get_settings_keyboard())
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     add_subscriber(chat_id)
-    # Создаем кнопку для запуска Web App
     keyboard = [[InlineKeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"})]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await send_message(context.bot, chat_id, "Добро пожаловать! Вы подписаны на новые объявления.\nНастройте фильтры через кнопку ниже:", reply_markup=reply_markup)
@@ -163,45 +162,35 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     remove_subscriber(chat_id)
     await send_message(context.bot, chat_id, "Вы отписались от обновлений.")
 
+def get_settings_keyboard():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app/"})]])
+
+
 # Инициализация бота
-async def main():
-    # Проверка и установка вебхука
-    webhook_result = set_webhook()
-    logger.info(f"Webhook setup result: {webhook_result}")
-
-    # Инициализация приложения
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("stop", stop))
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, webhook_update))
-
-    # Настройка порта
-    port = int(os.getenv("PORT", 5000))
-    logger.info(f"Using port: {port}")
-
-    # Настройка вебхука для Telegram
-    logger.info(f"Starting webhook server for {WEBHOOK_URL} on port {port}")
-    await application.initialize()
-    await application.start()
+def main():
     try:
-        await application.updater.start_webhook(
+        application = Application.builder().token(TOKEN).build()
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("stop", stop))
+        application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
+        # Настройка порта
+        port = int(os.getenv("PORT", 5000))
+        logger.info(f"Using port: {port}")
+
+
+        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+        logger.info(f"Setting webhook to {webhook_url}")
+        application.run_webhook(
             listen="0.0.0.0",
             port=port,
-            url_path=f"/{TOKEN}",
-            webhook_url=WEBHOOK_URL,
+            url_path=TOKEN,
+            webhook_url=webhook_url,
             allowed_updates=["message"]
         )
         logger.info(f"Webhook route registered at /{TOKEN}")
     except Exception as e:
         logger.error(f"Error starting webhook: {e}")
         raise
-
 if __name__ == "__main__":
-    import asyncio
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(main())
-        loop.run_forever()
-    except KeyboardInterrupt:
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.close()
+    main()    
+
