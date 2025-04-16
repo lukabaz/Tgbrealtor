@@ -154,7 +154,7 @@ async def main():
     await application.updater.start_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
-        url_path=TOKEN,
+        url_path=f"/{TOKEN}",
         webhook_url=WEBHOOK_URL,
         allowed_updates=["message"]
     )
