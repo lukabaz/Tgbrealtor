@@ -5,7 +5,6 @@ import redis
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
-from aiohttp import web
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,7 +18,7 @@ redis_url = os.getenv("REDIS_URL")
 redis_client = redis.from_url(redis_url, decode_responses=True)
 
 # Настройка вебхука
-WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook/{TOKEN}"
 
 # Проверка и установка вебхука
 def set_webhook():
@@ -148,7 +147,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error processing web app data: {e}")
             await send_message(context.bot, chat_id, "Ошибка при сохранении фильтров.")
     else:
-        logger.info("No web_app_data in update")
+        logger.info(f"No web_app_data in update")
         await send_message(context.bot, chat_id, "Пожалуйста, используйте Web App для настройки фильтров.")
 
 # Команда /start
@@ -187,10 +186,11 @@ async def main():
         await application.updater.start_webhook(
             listen="0.0.0.0",
             port=port,
-            url_path=f"/{TOKEN}",
+            url_path=f"/webhook/{TOKEN}",
             webhook_url=WEBHOOK_URL,
             allowed_updates=["message"]
         )
+        logger.info(f"Webhook route registered at /webhook/{TOKEN}")
     except Exception as e:
         logger.error(f"Error starting webhook: {e}")
         raise
