@@ -113,7 +113,6 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if update.message and update.message.web_app_data:
-        # Обработка данных из Web App
         try:
             filters_data = json.loads(update.message.web_app_data.data)
             logger.info(f"Received Web App data: {filters_data}")
@@ -145,7 +144,8 @@ async def main():
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stop", stop))
-    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
+    # Используем фильтр для сообщений, содержащих web_app_data
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, webhook_update))
 
     # Настройка вебхука для Telegram
     logger.info(f"Starting webhook server for {WEBHOOK_URL}")
@@ -156,7 +156,7 @@ async def main():
         port=int(os.getenv("PORT", 10000)),
         url_path=TOKEN,
         webhook_url=WEBHOOK_URL,
-        allowed_updates=["message", "web_app_data"]
+        allowed_updates=["message"]
     )
 
 if __name__ == "__main__":
