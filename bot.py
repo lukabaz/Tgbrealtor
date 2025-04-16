@@ -2,6 +2,7 @@ import os
 import logging
 import json
 import redis
+import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -18,6 +19,29 @@ redis_client = redis.from_url(redis_url, decode_responses=True)
 
 # Настройка вебхука
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+
+# Проверка и установка вебхука
+def set_webhook():
+    try:
+        # Проверка текущего вебхука
+        response = requests.get(f"https://api.telegram.org/bot{TOKEN}/getWebhookInfo")
+        webhook_info = response.json()
+        logger.info(f"Current webhook info: {webhook_info}")
+        
+        # Установка вебхука
+        response = requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/setWebhook",
+            json={"url": WEBHOOK_URL, "allowed_updates": ["message"]}
+        )
+        result = response.json()
+        if result.get("ok"):
+            logger.info(f"Webhook set successfully: {WEBHOOK_URL}")
+        else:
+            logger.error(f"Failed to set webhook: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Error setting webhook: {e}")
+        return {"ok": False, "error": str(e)}
 
 # Асинхронная функция для отправки сообщений
 async def send_message(bot, chat_id: int, message: str, reply_markup=None):
@@ -140,20 +164,27 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Инициализация бота
 async def main():
+    # Проверка и установка вебхука
+    webhook_result = set_webhook()
+    logger.info(f"Webhook setup result: {webhook_result}")
+
     # Инициализация приложения
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stop", stop))
-    # Используем фильтр для сообщений, содержащих web_app_data
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, webhook_update))
 
+    # Настройка порта
+    port = int(os.getenv("PORT", 5000))  # Используем PORT из окружения или 5000 по умолчанию
+    logger.info(f"Using port: {port}")
+
     # Настройка вебхука для Telegram
-    logger.info(f"Starting webhook server for {WEBHOOK_URL}")
+    logger.info(f"Starting webhook server for {WEBHOOK_URL} on port {port}")
     await application.initialize()
     await application.start()
     await application.updater.start_webhook(
         listen="0.0.0.0",
-        port=int(os.getenv("PORT", 10000)),
+        port=port,
         url_path=f"/{TOKEN}",
         webhook_url=WEBHOOK_URL,
         allowed_updates=["message"]
