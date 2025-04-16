@@ -5,6 +5,7 @@ import redis
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from aiohttp import web
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -175,20 +176,24 @@ async def main():
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, webhook_update))
 
     # Настройка порта
-    port = int(os.getenv("PORT", 5000))  # Используем PORT из окружения или 5000 по умолчанию
+    port = int(os.getenv("PORT", 5000))
     logger.info(f"Using port: {port}")
 
     # Настройка вебхука для Telegram
     logger.info(f"Starting webhook server for {WEBHOOK_URL} on port {port}")
     await application.initialize()
     await application.start()
-    await application.updater.start_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path=f"/{TOKEN}",
-        webhook_url=WEBHOOK_URL,
-        allowed_updates=["message"]
-    )
+    try:
+        await application.updater.start_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=f"/{TOKEN}",
+            webhook_url=WEBHOOK_URL,
+            allowed_updates=["message"]
+        )
+    except Exception as e:
+        logger.error(f"Error starting webhook: {e}")
+        raise
 
 if __name__ == "__main__":
     import asyncio
