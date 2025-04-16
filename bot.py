@@ -4,7 +4,7 @@ import json
 import redis
 import requests
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, WebhookUpdateHandler
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -85,7 +85,7 @@ def add_seen_id(listing_id: str):
 
 # Обработчик вебхука
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id if update.message else update.callback_query.message.chat_id if update.callback_query else None
+    chat_id = update.message.chat_id if update.message else None
     if not chat_id:
         logger.error("No chat_id found in update")
         return
@@ -93,8 +93,8 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message and update.message.web_app_data:
         # Обработка данных из Web App
         try:
-            filters = json.loads(update.message.web_app_data.data)
-            save_filters(chat_id, filters)
+            filters_data = json.loads(update.message.web_app_data.data)
+            save_filters(chat_id, filters_data)
             await send_message(context.bot, chat_id, "Фильтры сохранены!")
         except Exception as e:
             logger.error(f"Error processing web app data: {e}")
@@ -115,7 +115,7 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_message(context.bot, chat_id, "Вы отписались от обновлений.")
 
 # Инициализация бота
-def main():
+async def main():
     # Установка вебхука при запуске
     set_webhook()
 
@@ -123,17 +123,18 @@ def main():
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stop", stop))
-    application.add_handler(WebhookUpdateHandler(webhook_update))
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
 
     # Настройка вебхука для Telegram
     logger.info(f"Starting webhook server for {WEBHOOK_URL}")
-    application.run_webhook(
+    await application.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
         url_path=TOKEN,
         webhook_url=WEBHOOK_URL,
-        allowed_updates=["message", "callback_query", "web_app_data"]
+        allowed_updates=["message", "web_app_data"]
     )
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
