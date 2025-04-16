@@ -3,7 +3,7 @@ import logging
 import json
 import redis
 import requests
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 # Настройка логирования
@@ -18,20 +18,18 @@ redis_url = os.getenv("REDIS_URL")
 redis_client = redis.from_url(redis_url, decode_responses=True)
 
 # Настройка вебхука
-WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook/{TOKEN}"
+WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
 
 # Проверка и установка вебхука
 def set_webhook():
     try:
-        # Проверка текущего вебхука
         response = requests.get(f"https://api.telegram.org/bot{TOKEN}/getWebhookInfo")
         webhook_info = response.json()
         logger.info(f"Current webhook info: {webhook_info}")
         
-        # Установка вебхука
         response = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/setWebhook",
-            json={"url": WEBHOOK_URL, "allowed_updates": ["message"]}
+            json={"url": WEBHOOK_URL, "allowed_updates": ["message"], "max_connections": 40}
         )
         result = response.json()
         if result.get("ok"):
@@ -154,7 +152,10 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     add_subscriber(chat_id)
-    await send_message(context.bot, chat_id, "Добро пожаловать! Вы подписаны на новые объявления.\nИспользуйте /stop для отписки.")
+    # Создаем кнопку для запуска Web App
+    keyboard = [[InlineKeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"})]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await send_message(context.bot, chat_id, "Добро пожаловать! Вы подписаны на новые объявления.\nНастройте фильтры через кнопку ниже:", reply_markup=reply_markup)
 
 # Команда /stop
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -186,11 +187,13 @@ async def main():
         await application.updater.start_webhook(
             listen="0.0.0.0",
             port=port,
-            url_path=f"/webhook/{TOKEN}",
+            url_path=f"/{TOKEN}",
             webhook_url=WEBHOOK_URL,
-            allowed_updates=["message"]
+            allowed_updates=["message"],
+            connect_timeout=10,
+            read_timeout=10
         )
-        logger.info(f"Webhook route registered at /webhook/{TOKEN}")
+        logger.info(f"Webhook route registered at /{TOKEN}")
     except Exception as e:
         logger.error(f"Error starting webhook: {e}")
         raise
