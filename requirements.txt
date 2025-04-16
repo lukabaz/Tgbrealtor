@@ -1,6 +1,5 @@
-playwright==1.44.0
-beautifulsoup4==4.12.3
 python-telegram-bot[webhooks]==21.10
 redis==5.0.8
+
 
 
