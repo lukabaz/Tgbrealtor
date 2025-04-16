@@ -106,6 +106,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     add_subscriber(chat_id)
+    # Отправка сообщения без инлайн-кнопки
     await send_message(context.bot, chat_id, "Добро пожаловать! Вы подписаны на новые объявления.\nИспользуйте /stop для отписки.")
 
 # Команда /stop
@@ -120,14 +121,16 @@ async def main():
     set_webhook()
 
     # Инициализация приложения
-    application = Application.builder().token(TOKEN).build()
+    application = await Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stop", stop))
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
 
     # Настройка вебхука для Telegram
     logger.info(f"Starting webhook server for {WEBHOOK_URL}")
-    await application.run_webhook(
+    await application.initialize()
+    await application.start()
+    await application.updater.start_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
         url_path=TOKEN,
@@ -137,4 +140,10 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
