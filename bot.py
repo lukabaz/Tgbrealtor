@@ -189,9 +189,7 @@ async def main():
             port=port,
             url_path=f"/{TOKEN}",
             webhook_url=WEBHOOK_URL,
-            allowed_updates=["message"],
-            connect_timeout=10,
-            read_timeout=10
+            allowed_updates=["message"]
         )
         logger.info(f"Webhook route registered at /{TOKEN}")
     except Exception as e:
