@@ -120,8 +120,8 @@ async def main():
     # Установка вебхука при запуске
     set_webhook()
 
-    # Инициализация приложения
-    application = await Application.builder().token(TOKEN).build()
+    # Инициализация приложения (без await, так как build() синхронный)
+    application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stop", stop))
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
