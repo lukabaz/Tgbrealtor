@@ -1,111 +1,30 @@
 import os
-import logging
 import json
 import redis
-import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Токен от BotFather
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-
 # Подключение к Redis
-redis_url = os.getenv("REDIS_URL")
-redis_client = redis.from_url(redis_url, decode_responses=True)
+redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
 
 # Настройка вебхука
-WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{os.getenv('TELEGRAM_TOKEN')}"
 
-# Проверка и установка вебхука
-def set_webhook():
-    try:
-        response = requests.get(f"https://api.telegram.org/bot{TOKEN}/getWebhookInfo")
-        webhook_info = response.json()
-        logger.info(f"Current webhook info: {webhook_info}")
-        
-        response = requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/setWebhook",
-            json={"url": WEBHOOK_URL, "allowed_updates": ["message"], "max_connections": 40}
-        )
-        result = response.json()
-        if result.get("ok"):
-            logger.info(f"Webhook set successfully: {WEBHOOK_URL}")
-        else:
-            logger.error(f"Failed to set webhook: {result}")
-        return result
-    except Exception as e:
-        logger.error(f"Error setting webhook: {e}")
-        return {"ok": False, "error": str(e)}
-
-# Асинхронная функция для отправки сообщений
-async def send_message(bot, chat_id: int, message: str, reply_markup=None):
-    await bot.send_message(chat_id=chat_id, text=message, reply_markup=reply_markup, disable_web_page_preview=True)
-
-# Работа с Redis
+# Сохранение фильтров в Redis
 def save_filters(chat_id: int, filters: dict):
-    try:
-        redis_client.set(f"filters:{chat_id}", json.dumps(filters))
-        logger.info(f"Filters saved for chat_id {chat_id}: {filters}")
-    except Exception as e:
-        logger.error(f"Error saving filters: {e}")
+    redis_client.set(f"filters:{chat_id}", json.dumps(filters))
 
-def load_filters(chat_id: int) -> dict:
-    try:
-        data = redis_client.get(f"filters:{chat_id}")
-        return json.loads(data) if data else {}
-    except Exception as e:
-        logger.error(f"Error loading filters: {e}")
-        return {}
-
-def get_subscribed_users() -> set:
-    try:
-        data = redis_client.get("subscribed_users")
-        return set(json.loads(data)) if data else set()
-    except Exception as e:
-        logger.error(f"Error loading subscribed users: {e}")
-        return set()
-
-def add_subscriber(chat_id: int):
-    users = get_subscribed_users()
-    users.add(str(chat_id))
-    redis_client.set("subscribed_users", json.dumps(list(users)))
-
-def remove_subscriber(chat_id: int):
-    users = get_subscribed_users()
-    users.discard(str(chat_id))
-    redis_client.set("subscribed_users", json.dumps(list(users)))
-
-def get_seen_ids() -> set:
-    try:
-        data = redis_client.get("seen_ids")
-        return set(json.loads(data)) if data else set()
-    except Exception as e:
-        logger.error(f"Error loading seen_ids: {e}")
-        return set()
-
-def add_seen_id(listing_id: str):
-    seen_ids = get_seen_ids()
-    seen_ids.add(listing_id)
-    redis_client.set("seen_ids", json.dumps(list(seen_ids)))
-
-# Форматирование ответа с параметрами
-def format_filters_response(filters, language='ru'):
+# Форматирование ответа с фильтрами
+def format_filters_response(filters):
     city_map = {'1': 'Тбилиси', '2': 'Батуми', '3': 'Кутаиси'}
     deal_type_map = {'rent': 'Аренда', 'sale': 'Продажа'}
     own_ads_map = {'1': 'Да', '0': 'Нет'}
 
     city = city_map.get(filters.get('city', ''), 'Не указан')
     districts = []
-    if filters.get('districts', {}).get('tbilisi'):
-        districts.extend(filters['districts']['tbilisi'])
-    if filters.get('districts', {}).get('batumi'):
-        districts.extend(filters['districts']['batumi'])
-    if filters.get('districts', {}).get('kutaisi'):
-        districts.extend(filters['districts']['kutaisi'])
+    for city_key in ['tbilisi', 'batumi', 'kutaisi']:
+        if filters.get('districts', {}).get(city_key):
+            districts.extend(filters['districts'][city_key])
     districts_str = ', '.join(districts) if districts else 'Не указаны'
     deal_type = deal_type_map.get(filters.get('deal_type', ''), 'Не указан')
     price = f"{filters.get('price_from', '0')}-{filters.get('price_to', '0')}$"
@@ -126,71 +45,44 @@ def format_filters_response(filters, language='ru'):
         f"Только собственник: {own_ads}"
     )
 
-# Обработчик вебхука
+# Обработчик Web App данных
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received update: {update.to_dict()}")
-    chat_id = update.message.chat_id if update.message else None
-    if not chat_id:
-        logger.error("No chat_id found in update")
-        return
-
-    if update.message and update.message.web_app_data:
-        try:
-            filters_data = json.loads(update.message.web_app_data.data)
-            logger.info(f"Received Web App data: {filters_data}")
-            save_filters(chat_id, filters_data)
-            response_message = format_filters_response(filters_data)
-            await send_message(context.bot, chat_id, response_message, reply_markup=get_settings_keyboard())
-        except Exception as e:
-            logger.error(f"Error processing web app data: {e}")
-            await send_message(context.bot, chat_id, "Ошибка при сохранении фильтров.")
-    else:
-        logger.info(f"No web_app_data in update")
-        await send_message(context.bot, chat_id, "Пожалуйста, используйте Web App для настройки фильтров.", reply_markup=get_settings_keyboard())
+    chat_id = update.message.chat_id
+    filters_data = json.loads(update.message.web_app_data.data)
+    save_filters(chat_id, filters_data)
+    response_message = format_filters_response(filters_data)
+    await context.bot.send_message(chat_id=chat_id, text=response_message, reply_markup=get_settings_keyboard())
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
-    add_subscriber(chat_id)
     keyboard = [[KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"})]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await send_message(context.bot, chat_id, "Добро пожаловать! Вы подписаны на новые объявления.\nНастройте фильтры через кнопку ниже:", reply_markup=reply_markup)
+    await context.bot.send_message(chat_id=chat_id, text="Добро пожаловать! Настройте фильтры:", reply_markup=reply_markup)
 
 # Команда /stop
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
-    remove_subscriber(chat_id)
-    await send_message(context.bot, chat_id, "Вы отписались от обновлений.")
+    await context.bot.send_message(chat_id=chat_id, text="Вы отписались от обновлений.")
 
+# Клавиатура с кнопкой для Web App
 def get_settings_keyboard():
     return ReplyKeyboardMarkup([[KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"})]], resize_keyboard=True)
 
-
 # Инициализация бота
 def main():
-    try:
-        application = Application.builder().token(TOKEN).build()
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("stop", stop))
-        application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
-        # Настройка порта
-        port = int(os.getenv("PORT", 5000))
-        logger.info(f"Using port: {port}")
+    application = Application.builder().token(os.getenv("TELEGRAM_TOKEN")).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("stop", stop))
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
+    
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.getenv("PORT", 5000)),
+        url_path=os.getenv("TELEGRAM_TOKEN"),
+        webhook_url=WEBHOOK_URL,
+        allowed_updates=["message"]
+    )
 
-
-        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
-        logger.info(f"Setting webhook to {webhook_url}")
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=TOKEN,
-            webhook_url=webhook_url,
-            allowed_updates=["message"]
-        )
-        logger.info(f"Webhook route registered at /{TOKEN}")
-    except Exception as e:
-        logger.error(f"Error starting webhook: {e}")
-        raise
 if __name__ == "__main__":
-    main()    
-
+    main()
