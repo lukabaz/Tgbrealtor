@@ -2,7 +2,7 @@ import os
 import json
 import redis
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
-from telegram.ext import Application, ContextTypes, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
+from telegram.ext import Application, ContextTypes, MessageHandler, filters, PreCheckoutQueryHandler
 
 # Подключение к Redis
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
@@ -70,29 +70,26 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response_message = format_filters_response(filters_data)
     await context.bot.send_message(chat_id=chat_id, text=response_message, reply_markup=get_settings_keyboard(chat_id))
 
-# Обработчик для приветственного сообщения
-async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    await context.bot.send_message(chat_id=chat_id, text="Добро пожаловать! Настройте фильтры или запустите бота:", reply_markup=get_settings_keyboard(chat_id))
-
-# Обработчик текстовых сообщений для управления ботом
-async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Обработчик текстовых сообщений для показа клавиатуры
+async def show_settings_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text
 
-    if text in ["🟢 Стоп", "🔴 Старт"]:
+    if text in ["🔴 Старт"]:
         status = get_bot_status(chat_id)
         new_status = "stopped" if status == "running" else "running"
         await context.bot.send_invoice(
             chat_id=chat_id,
-            title="Управление ботом",
+            title="Подписку на месяц",
             description=f"{'Остановка' if new_status == 'stopped' else 'Запуск'} бота",
             payload=f"toggle_bot_status:{chat_id}:{new_status}",
             provider_token="",  # Для Stars оставляем пустым
-            currency="XTR",
-            prices=[{"label": "Стоимость", "amount": 100}],  # 1 XTR = 100 единиц
+            currency="XTR",  # Только Telegram Stars
+            prices=[{"label": "Стоимость", "amount": 100}],
             start_parameter="toggle-bot-status"
         )
+    else:
+        await context.bot.send_message(chat_id=chat_id, text="Настройте фильтры:", reply_markup=get_settings_keyboard(chat_id))
 
 # Обработчик подтверждения оплаты
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,7 +106,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if chat_id == chat_id_from_payload:
         save_bot_status(chat_id, new_status)
-        status_text = "Бот остановлен 🔴" if new_status == "stopped" else "Бот запущен 🟢"
+        status_text = "Подписка истекла 🔴" if new_status == "stopped" else "Подписка активна 🟢"
         await context.bot.send_message(
             chat_id=chat_id,
             text=status_text,
@@ -120,8 +117,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 def main():
     application = Application.builder().token(os.getenv("TELEGRAM_TOKEN")).build()
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
-    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_user))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, show_settings_keyboard))
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     application.add_handler(PreCheckoutQueryHandler(pre_checkout))
     
