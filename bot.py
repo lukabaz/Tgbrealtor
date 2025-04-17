@@ -2,7 +2,8 @@ import os
 import json
 import redis
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
-from telegram.ext import Application, ContextTypes, MessageHandler, filters, PreCheckoutQueryHandler
+from telegram.ext import Application, ContextTypes, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
+from datetime import datetime, timedelta
 
 # Подключение к Redis
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
@@ -14,14 +15,36 @@ WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{os.getenv('TELE
 def save_filters(chat_id: int, filters: dict):
     redis_client.set(f"filters:{chat_id}", json.dumps(filters))
 
-# Сохранение статуса бота в Redis
+# Вычисление времени до 1 числа следующего месяца (для TTL)
+def get_ttl_to_next_month():
+    now = datetime.utcnow()
+    # Первое число следующего месяца
+    next_month = (now.replace(day=1) + timedelta(days=32)).replace(day=1)
+    # Время до 1 числа следующего месяца в секундах
+    ttl = int((next_month - now).total_seconds())
+    return ttl
+
+# Сохранение статуса бота в Redis с TTL
 def save_bot_status(chat_id: int, status: str):
-    redis_client.set(f"bot_status:{chat_id}", status)
+    key = f"bot_status:{chat_id}"
+    redis_client.set(key, status)
+    # Устанавливаем TTL до 1 числа следующего месяца
+    if status == "running":
+        ttl = get_ttl_to_next_month()
+        redis_client.expire(key, ttl)
 
 # Получение статуса бота из Redis
 def get_bot_status(chat_id: int) -> str:
     status = redis_client.get(f"bot_status:{chat_id}")
     return status if status else "stopped"
+
+# Обновление клавиатуры с учётом статуса бота
+def get_settings_keyboard(chat_id: int):
+    status = get_bot_status(chat_id)
+    status_button = "🟢 Стоп" if status == "running" else "🔴 Старт"
+    return ReplyKeyboardMarkup([
+        [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"}), KeyboardButton(status_button)]
+    ], resize_keyboard=True)
 
 # Форматирование ответа с фильтрами
 def format_filters_response(filters):
@@ -54,14 +77,6 @@ def format_filters_response(filters):
         f"Только собственник: {own_ads}"
     )
 
-# Обновление клавиатуры с учётом статуса бота
-def get_settings_keyboard(chat_id: int):
-    status = get_bot_status(chat_id)
-    status_button = "🟢 Стоп" if status == "running" else "🔴 Старт"
-    return ReplyKeyboardMarkup([
-        [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"}), KeyboardButton(status_button)]
-    ], resize_keyboard=True)
-
 # Обработчик Web App данных
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -70,26 +85,45 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response_message = format_filters_response(filters_data)
     await context.bot.send_message(chat_id=chat_id, text=response_message, reply_markup=get_settings_keyboard(chat_id))
 
-# Обработчик текстовых сообщений для показа клавиатуры
-async def show_settings_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Обработчик для приветственного сообщения
+async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    await context.bot.send_message(chat_id=chat_id, text="Добро пожаловать! Настройте фильтры или запустите бота:", reply_markup=get_settings_keyboard(chat_id))
+
+# Обработчик текстовых сообщений для управления ботом
+async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text
 
-    if text in ["🔴 Старт"]:
+    if text == "🔴 Старт":
         status = get_bot_status(chat_id)
-        new_status = "stopped" if status == "running" else "running"
-        await context.bot.send_invoice(
+        if status == "running":
+            # Подписка уже активна, просто обновляем клавиатуру
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Подписка уже активна 🟢",
+                reply_markup=get_settings_keyboard(chat_id)
+            )
+        else:
+            # Запрашиваем оплату для активации подписки
+            await context.bot.send_invoice(
+                chat_id=chat_id,
+                title="Подписка на месяц",
+                description="Запуск бота на месяц",
+                payload=f"toggle_bot_status:{chat_id}:running",
+                provider_token="",
+                currency="XTR",
+                prices=[{"label": "Стоимость", "amount": 10000}],
+                start_parameter="toggle-bot-status"
+            )
+    elif text == "🟢 Стоп":
+        # Остановка бота бесплатна
+        save_bot_status(chat_id, "stopped")
+        await context.bot.send_message(
             chat_id=chat_id,
-            title="Подписку на месяц",
-            description=f"{'Остановка' if new_status == 'stopped' else 'Запуск'} бота",
-            payload=f"toggle_bot_status:{chat_id}:{new_status}",
-            provider_token="",  # Для Stars оставляем пустым
-            currency="XTR",  # Только Telegram Stars
-            prices=[{"label": "Стоимость", "amount": 100}],
-            start_parameter="toggle-bot-status"
+            text="Подписка истекла 🔴",
+            reply_markup=get_settings_keyboard(chat_id)
         )
-    else:
-        await context.bot.send_message(chat_id=chat_id, text="Настройте фильтры:", reply_markup=get_settings_keyboard(chat_id))
 
 # Обработчик подтверждения оплаты
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -106,7 +140,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if chat_id == chat_id_from_payload:
         save_bot_status(chat_id, new_status)
-        status_text = "Подписка истекла 🔴" if new_status == "stopped" else "Подписка активна 🟢"
+        status_text = "Подписка истекла 🔴" if new_status == "stopped" else "Подписка активна 🟢 до 1 числа следующего месяца"
         await context.bot.send_message(
             chat_id=chat_id,
             text=status_text,
@@ -117,7 +151,8 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 def main():
     application = Application.builder().token(os.getenv("TELEGRAM_TOKEN")).build()
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, show_settings_keyboard))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_user))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     application.add_handler(PreCheckoutQueryHandler(pre_checkout))
     
