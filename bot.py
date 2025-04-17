@@ -11,9 +11,14 @@ redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
 # Настройка вебхука
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{os.getenv('TELEGRAM_TOKEN')}"
 
+# Время неактивности (1.5 месяца в секундах)
+INACTIVITY_TTL = int(1.5 * 30 * 24 * 60 * 60)  # 1.5 месяца
+
 # Сохранение фильтров в Redis
 def save_filters(chat_id: int, filters: dict):
-    redis_client.set(f"filters:{chat_id}", json.dumps(filters))
+    key = f"filters:{chat_id}"
+    redis_client.set(key, json.dumps(filters))
+    redis_client.expire(key, INACTIVITY_TTL)
 
 # Вычисление времени до 1 числа следующего месяца
 def get_end_of_subscription():
@@ -34,10 +39,12 @@ def save_bot_status(chat_id: int, status: str, set_subscription_end: bool = Fals
         redis_client.expire(key, ttl)
         redis_client.expire(sub_end_key, ttl)
     else:
-        # Сохраняем существующий TTL, если он есть
         ttl = redis_client.ttl(key)
         if ttl > 0:
             redis_client.expire(key, ttl)
+        else:
+            redis_client.expire(key, INACTIVITY_TTL)
+        redis_client.expire(sub_end_key, max(ttl, INACTIVITY_TTL) if redis_client.exists(sub_end_key) else INACTIVITY_TTL)
 
 # Проверка, активна ли подписка
 def is_subscription_active(chat_id: int) -> bool:
