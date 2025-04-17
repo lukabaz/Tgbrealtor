@@ -3,7 +3,7 @@ import logging
 import json
 import redis
 import requests
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 # Настройка логирования
@@ -165,6 +165,7 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def get_settings_keyboard():
     return ReplyKeyboardMarkup([[KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"})]], resize_keyboard=True)
 
+
 # Инициализация бота
 def main():
     try:
@@ -172,19 +173,24 @@ def main():
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("stop", stop))
         application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
+        # Настройка порта
+        port = int(os.getenv("PORT", 5000))
+        logger.info(f"Using port: {port}")
+
 
         webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
         logger.info(f"Setting webhook to {webhook_url}")
         application.run_webhook(
             listen="0.0.0.0",
-            port=10000,
+            port=port,
             url_path=TOKEN,
             webhook_url=webhook_url,
             allowed_updates=["message"]
         )
+        logger.info(f"Webhook route registered at /{TOKEN}")
     except Exception as e:
-        logger.error(f"Error in main loop: {e}")
+        logger.error(f"Error starting webhook: {e}")
         raise
-
 if __name__ == "__main__":
-    main()
+    main()    
+
