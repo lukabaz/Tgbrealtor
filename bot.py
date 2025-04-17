@@ -92,16 +92,19 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 save_bot_status(chat_id, "running")
                 await send_status_message(chat_id, context, ACTIVE_SUBSCRIPTION_MESSAGE)
             else:
-                await context.bot.send_invoice(
-                    chat_id=chat_id,
-                    title="Доступ к объявлениям",
-                    description="Подписка на месяц",
-                    payload=f"toggle_bot_status:{chat_id}:running",
-                    provider_token="",
-                    currency="XTR",
-                    prices=[{"label": "Стоимость", "amount": 100}],
-                    start_parameter="toggle-bot-status"
-                )
+                # Вместо инвойса сразу активируем подписку
+                save_bot_status(chat_id, "running", set_sub_end=True)
+                await send_status_message(chat_id, context, ACTIVE_SUBSCRIPTION_MESSAGE)
+                #await context.bot.send_invoice(
+                    #chat_id=chat_id,
+                    #title="Доступ к объявлениям",
+                    #description="Подписка на месяц",
+                    #payload=f"toggle_bot_status:{chat_id}:running",
+                    #provider_token="",
+                    #currency="XTR",
+                    #prices=[{"label": "Стоимость", "amount": 100}],
+                    #start_parameter="toggle-bot-status"
+                #)
         else:
             save_bot_status(chat_id, "stopped")
             message = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Бот остановлен 🛑."
@@ -122,8 +125,8 @@ def main():
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
     app.add_handler(ChatMemberHandler(welcome_new_user, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
-    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
-    app.add_handler(PreCheckoutQueryHandler(pre_checkout))
+    #app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
+    #app.add_handler(PreCheckoutQueryHandler(pre_checkout))
 
     app.run_webhook(
         listen="0.0.0.0",
