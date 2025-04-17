@@ -15,26 +15,39 @@ WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{os.getenv('TELE
 def save_filters(chat_id: int, filters: dict):
     redis_client.set(f"filters:{chat_id}", json.dumps(filters))
 
-# Вычисление времени до 1 числа следующего месяца (для TTL)
-def get_ttl_to_next_month():
+# Вычисление времени до 1 числа следующего месяца
+def get_end_of_subscription():
     now = datetime.utcnow()
     next_month = (now.replace(day=1) + timedelta(days=32)).replace(day=1)
-    ttl = int((next_month - now).total_seconds())
-    return ttl
+    return int(next_month.timestamp())
 
-# Проверка оставшегося TTL
-def get_remaining_ttl(chat_id: int) -> int:
+# Сохранение статуса и срока подписки
+def save_bot_status(chat_id: int, status: str, set_subscription_end: bool = False):
     key = f"bot_status:{chat_id}"
-    ttl = redis_client.ttl(key)  # Возвращает оставшееся время в секундах, -2 если ключа нет
-    return ttl if ttl > 0 else 0
-
-# Сохранение статуса бота в Redis с TTL
-def save_bot_status(chat_id: int, status: str):
-    key = f"bot_status:{chat_id}"
+    sub_end_key = f"subscription_end:{chat_id}"
+    
     redis_client.set(key, status)
-    if status == "running":
-        ttl = get_ttl_to_next_month()
+    if set_subscription_end:
+        end_timestamp = get_end_of_subscription()
+        redis_client.set(sub_end_key, end_timestamp)
+        ttl = int(end_timestamp - datetime.utcnow().timestamp())
         redis_client.expire(key, ttl)
+        redis_client.expire(sub_end_key, ttl)
+    else:
+        # Сохраняем существующий TTL, если он есть
+        ttl = redis_client.ttl(key)
+        if ttl > 0:
+            redis_client.expire(key, ttl)
+
+# Проверка, активна ли подписка
+def is_subscription_active(chat_id: int) -> bool:
+    sub_end_key = f"subscription_end:{chat_id}"
+    end_timestamp = redis_client.get(sub_end_key)
+    if end_timestamp:
+        end_timestamp = int(end_timestamp)
+        current_timestamp = int(datetime.utcnow().timestamp())
+        return current_timestamp < end_timestamp
+    return False
 
 # Получение статуса бота из Redis
 def get_bot_status(chat_id: int) -> str:
@@ -108,6 +121,13 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text="Подписка уже активна 🟢",
                 reply_markup=get_settings_keyboard(chat_id)
             )
+        elif is_subscription_active(chat_id):
+            save_bot_status(chat_id, "running")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Подписка возобновлена 🟢",
+                reply_markup=get_settings_keyboard(chat_id)
+            )
         else:
             await context.bot.send_invoice(
                 chat_id=chat_id,
@@ -120,9 +140,8 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 start_parameter="toggle-bot-status"
             )
     elif text == "🟢 Стоп":
-        ttl = get_remaining_ttl(chat_id)
         save_bot_status(chat_id, "stopped")
-        if ttl > 0:
+        if is_subscription_active(chat_id):
             await context.bot.send_message(
                 chat_id=chat_id,
                 text="Подписка приостановлена 🔴. Вы можете возобновить её до 1 числа следующего месяца.",
@@ -149,7 +168,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     chat_id_from_payload = int(chat_id_from_payload)
 
     if chat_id == chat_id_from_payload:
-        save_bot_status(chat_id, new_status)
+        save_bot_status(chat_id, new_status, set_subscription_end=True)
         status_text = "Подписка истекла 🔴" if new_status == "stopped" else "Подписка активна 🟢 до 1 числа следующего месяца"
         await context.bot.send_message(
             chat_id=chat_id,
