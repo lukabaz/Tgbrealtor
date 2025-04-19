@@ -3,19 +3,19 @@ import json
 import redis
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, ContextTypes, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{os.getenv('TELEGRAM_TOKEN')}"
 INACTIVITY_TTL = int(1.5 * 30 * 24 * 60 * 60)  # 1.5 месяца
 ACTIVE_SUBSCRIPTION_MESSAGE = "Подписка активирована 🟢"
 
-def save_filters(chat_id: int, filters: dict):
+def save_filters(chat_id: int, url: str):
     key = f"filters:{chat_id}"
-    redis_client.setex(key, INACTIVITY_TTL, json.dumps(filters))
+    redis_client.setex(key, INACTIVITY_TTL, url)
 
 def get_end_of_subscription():
-    next_month = (datetime.utcnow().replace(day=1) + timedelta(days=32)).replace(day=1)
+    next_month = (datetime.now(timezone.utc).replace(day=1) + timedelta(days=32)).replace(day=1)
     return int(next_month.timestamp())
 
 def save_bot_status(chat_id: int, status: str, set_sub_end: bool = False):
@@ -26,7 +26,7 @@ def save_bot_status(chat_id: int, status: str, set_sub_end: bool = False):
 
     if set_sub_end:
         end_timestamp = get_end_of_subscription()
-        ttl = end_timestamp - int(datetime.utcnow().timestamp())
+        ttl = end_timestamp - int(datetime.now(timezone.utc).timestamp())
         redis_client.setex(sub_end_key, ttl, end_timestamp)
         redis_client.expire(status_key, ttl)
     else:
@@ -34,7 +34,7 @@ def save_bot_status(chat_id: int, status: str, set_sub_end: bool = False):
 
 def is_subscription_active(chat_id: int) -> bool:
     ts = redis_client.get(f"subscription_end:{chat_id}")
-    return ts and int(ts) > int(datetime.utcnow().timestamp())
+    return ts and int(ts) > int(datetime.now(timezone.utc).timestamp())
 
 def get_bot_status(chat_id: int) -> str:
     return redis_client.get(f"bot_status:{chat_id}") or "stopped"
@@ -73,8 +73,11 @@ def format_filters_response(filters):
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     filters_data = json.loads(update.message.web_app_data.data)
-    save_filters(chat_id, filters_data)
-    await send_status_message(chat_id, context, format_filters_response(filters_data))
+    if "url" in filters_data:
+        save_filters(chat_id, filters_data["url"])  # Сохраняем только URL
+        await send_status_message(chat_id, context, format_filters_response(filters_data))
+    else:
+        await send_status_message(chat_id, context, "Ошибка: URL не сформирован")
 
 async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cm = update.my_chat_member
