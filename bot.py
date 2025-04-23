@@ -6,7 +6,7 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters, Pre
 from datetime import datetime, timedelta, timezone
 import logging
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
@@ -76,21 +76,32 @@ def format_filters_response(filters):
 
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
-    filters_data = json.loads(update.message.web_app_data.data)
+    raw_data = update.message.web_app_data.data
+    # filters_data = json.loads(update.message.web_app_data.data)
+    filters_data = json.loads(raw_data)
     logger.info("Текущее UTC время сервера: %s", datetime.now(timezone.utc))
+
+    logger.info("🔹 Webhook triggered for chat_id=%s", chat_id)
+    logger.info("🕒 Current UTC time: %s", datetime.now(timezone.utc))
+    logger.info("📦 Raw filters_data from WebApp:\n%s", json.dumps(filters_data, indent=2, ensure_ascii=False))
 
     if "url" in filters_data:
         save_filters(chat_id, filters_data["url"])  # Сохраняем только URL
+
+        utc_timestamp = int(datetime.now(timezone.utc).timestamp())
+        logger.info("💾 Saving filters_timestamp as: %s (UTC)", utc_timestamp)
 
         # Сохраняем метку времени сохранения фильтров в формате UTC
         redis_client.setex(
             f"filters_timestamp:{chat_id}",
             INACTIVITY_TTL,
-            int(datetime.now(timezone.utc).timestamp())
+            # int(datetime.now(timezone.utc).timestamp())
+            utc_timestamp
         )
 
         await send_status_message(chat_id, context, format_filters_response(filters_data))
     else:
+        logger.warning("⚠️ Filters data received without 'url'. Data: %s", filters_data)
         await send_status_message(chat_id, context, "Ошибка: URL не сформирован")
 
 async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
