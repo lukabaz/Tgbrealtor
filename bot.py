@@ -73,6 +73,8 @@ def format_filters_response(filters):
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     filters_data = json.loads(update.message.web_app_data.data)
+    print("Текущее UTC время сервера:", datetime.now(timezone.utc))  # ← вот эта строка
+    
     if "url" in filters_data:
         save_filters(chat_id, filters_data["url"])  # Сохраняем только URL
 
@@ -82,7 +84,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             INACTIVITY_TTL,
             int(datetime.now(timezone.utc).timestamp())
         )
-        
+
         await send_status_message(chat_id, context, format_filters_response(filters_data))
     else:
         await send_status_message(chat_id, context, "Ошибка: URL не сформирован")
