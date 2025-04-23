@@ -4,6 +4,10 @@ import redis
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, ContextTypes, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
 from datetime import datetime, timedelta, timezone
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{os.getenv('TELEGRAM_TOKEN')}"
@@ -73,8 +77,8 @@ def format_filters_response(filters):
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     filters_data = json.loads(update.message.web_app_data.data)
-    print("Текущее UTC время сервера:", datetime.now(timezone.utc))  # ← вот эта строка
-    
+    logger.info("Текущее UTC время сервера: %s", datetime.now(timezone.utc))
+
     if "url" in filters_data:
         save_filters(chat_id, filters_data["url"])  # Сохраняем только URL
 
