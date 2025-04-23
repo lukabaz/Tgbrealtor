@@ -6,7 +6,7 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters, Pre
 from datetime import datetime, timedelta, timezone
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
