@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # скрываем подробные логи httpx
 logger = logging.getLogger(__name__)
 
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
