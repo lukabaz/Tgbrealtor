@@ -75,6 +75,14 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filters_data = json.loads(update.message.web_app_data.data)
     if "url" in filters_data:
         save_filters(chat_id, filters_data["url"])  # Сохраняем только URL
+
+        # Сохраняем метку времени сохранения фильтров в формате UTC
+        redis_client.setex(
+            f"filters_timestamp:{chat_id}",
+            INACTIVITY_TTL,
+            int(datetime.now(timezone.utc).timestamp())
+        )
+        
         await send_status_message(chat_id, context, format_filters_response(filters_data))
     else:
         await send_status_message(chat_id, context, "Ошибка: URL не сформирован")
