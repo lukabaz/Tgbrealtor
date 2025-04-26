@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 redis_client = redis.from_url(os.getenv("REDIS_URL"), decode_responses=True)
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{os.getenv('TELEGRAM_TOKEN')}"
 INACTIVITY_TTL = int(1.5 * 30 * 24 * 60 * 60)  # 1.5 месяца
+TRIAL_TTL = 2 * 24 * 60 * 60  # 48 часов
 ACTIVE_SUBSCRIPTION_MESSAGE = "Подписка активирована 🟢"
 
 def save_filters(chat_id: int, url: str):
@@ -48,6 +49,7 @@ def get_settings_keyboard(chat_id: int):
     status_btn = "🟢 Стоп" if status == "running" else "🔴 Старт"
     return ReplyKeyboardMarkup([
         [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"}), KeyboardButton(status_btn)]
+        [KeyboardButton("🎁 Получить 2 дня бесплатно")]  # Кнопка для триала
     ], resize_keyboard=True)
 
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str):
@@ -98,30 +100,47 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text
 
-    if text in ["🔴 Старт", "🟢 Стоп"]:
-        is_starting = text == "🔴 Старт"
-        if is_starting:
-            if is_subscription_active(chat_id):
-                save_bot_status(chat_id, "running")
-                await send_status_message(chat_id, context, ACTIVE_SUBSCRIPTION_MESSAGE)
-            else:
-                # Вместо инвойса сразу активируем подписку
-                save_bot_status(chat_id, "running", set_sub_end=True)
-                await send_status_message(chat_id, context, ACTIVE_SUBSCRIPTION_MESSAGE)
-                #await context.bot.send_invoice(
-                    #chat_id=chat_id,
-                    #title="Доступ к объявлениям",
-                    #description="Подписка на месяц",
-                    #payload=f"toggle_bot_status:{chat_id}:running",
-                    #provider_token="",
-                    #currency="XTR",
-                    #prices=[{"label": "Стоимость", "amount": 100}],
-                    #start_parameter="toggle-bot-status"
-                #)
+    # Обработка кнопок "Старт", "Стоп", "Получить 2 дня бесплатно"
+    if text == "🔴 Старт":
+        # Вместо инвойса сразу активируем подписку
+        # save_bot_status(chat_id, "running", set_sub_end=True)
+        # Логика для запуска бота (если подписка активна)
+        if is_subscription_active(chat_id):
+            save_bot_status(chat_id, "running")
+            
+            await send_status_message(chat_id, context, ACTIVE_SUBSCRIPTION_MESSAGE)
         else:
-            save_bot_status(chat_id, "stopped")
-            message = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Бот остановлен 🛑."
-            await send_status_message(chat_id, context, message)
+            # Отправляем инвойс для оплаты подписки
+            await context.bot.send_invoice(
+                chat_id=chat_id,
+                title="Доступ к объявлениям",
+                description="Подписка на месяц",
+                payload=f"toggle_bot_status:{chat_id}:running",
+                provider_token="",
+                currency="XTR",
+                prices=[{"label": "Стоимость", "amount": 100}],
+                start_parameter="toggle-bot-status"
+            )
+    elif text == "🟢 Стоп":
+        # Логика для остановки бота
+        save_bot_status(chat_id, "stopped")
+        message = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Бот остановлен 🛑."
+        await send_status_message(chat_id, context, message)
+    
+    # Обработка кнопки для получения бесплатных 2 дней
+    elif text == "🎁 Получить 2 дня бесплатно":
+        # Проверяем, использовал ли пользователь триал
+        if redis_client.get(f"trial_used:{chat_id}") == "true":
+            await context.bot.send_message(chat_id, "Вы уже использовали бесплатные 2 дня!")
+        else:
+            # Активируем триал
+            redis_client.set(f"trial_used:{chat_id}", "true")
+            end_of_subscription = int((datetime.now(timezone.utc) + timedelta(seconds=TRIAL_TTL)).timestamp())
+            redis_client.setex(f"subscription_end:{chat_id}", TRIAL_TTL, end_of_subscription)
+
+            # Обновляем статус
+            save_bot_status(chat_id, "running", set_sub_end=True)
+            await context.bot.send_message(chat_id, "Вам предоставлены 2 дня бесплатного доступа! Подписка активирована 🟢")
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.answer_pre_checkout_query(update.pre_checkout_query.id, ok=True)
@@ -138,8 +157,9 @@ def main():
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
     app.add_handler(ChatMemberHandler(welcome_new_user, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
-    #app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
-    #app.add_handler(PreCheckoutQueryHandler(pre_checkout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
+    app.add_handler(PreCheckoutQueryHandler(pre_checkout))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons)) # Обработка кнопки для получения бесплатных 2 дней
 
     app.run_webhook(
         listen="0.0.0.0",
