@@ -49,7 +49,7 @@ def get_settings_keyboard(chat_id: int):
     status_btn = "🟢 Стоп" if status == "running" else "🔴 Старт"
     return ReplyKeyboardMarkup([
         [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"}), KeyboardButton(status_btn)],
-        [KeyboardButton("🎁 Получить 2 дня бесплатно")]  # Кнопка для триала
+        [KeyboardButton("🎁 Получить 2 дня бесплатно")],  # Кнопка для триала
         [KeyboardButton("💬 Поддержка")]  # Добавляем кнопку поддержки
     ], resize_keyboard=True)
 
