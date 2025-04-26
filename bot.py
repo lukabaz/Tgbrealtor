@@ -50,6 +50,7 @@ def get_settings_keyboard(chat_id: int):
     return ReplyKeyboardMarkup([
         [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"}), KeyboardButton(status_btn)],
         [KeyboardButton("🎁 Получить 2 дня бесплатно")]  # Кнопка для триала
+        [KeyboardButton("💬 Поддержка")]  # Добавляем кнопку поддержки
     ], resize_keyboard=True)
 
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str):
@@ -96,51 +97,66 @@ async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if cm.chat.type == "private" and cm.old_chat_member.status == "kicked" and cm.new_chat_member.status == "member":
         await send_status_message(cm.chat.id, context, "Добро пожаловать! Настройте фильтры или запустите бота:")
 
+# Обработчик сообщений от пользователя (в том числе сообщений через кнопки)
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
-    text = update.message.text
+    text = update.message.text  # Извлекаем текст из сообщения
 
     # Обработка кнопок "Старт", "Стоп", "Получить 2 дня бесплатно"
     if text == "🔴 Старт":
-        # Вместо инвойса сразу активируем подписку
-        # save_bot_status(chat_id, "running", set_sub_end=True)
-        # Логика для запуска бота (если подписка активна)
         if is_subscription_active(chat_id):
             save_bot_status(chat_id, "running")
-            
-            await send_status_message(chat_id, context, ACTIVE_SUBSCRIPTION_MESSAGE)
+            await send_status_message(chat_id, context, "Бот запущен!")
         else:
-            # Отправляем инвойс для оплаты подписки
             await context.bot.send_invoice(
                 chat_id=chat_id,
                 title="Доступ к объявлениям",
                 description="Подписка на месяц",
                 payload=f"toggle_bot_status:{chat_id}:running",
-                provider_token="",
+                provider_token="YOUR_PROVIDER_TOKEN",
                 currency="XTR",
-                prices=[{"label": "Стоимость", "amount": 100}],
+                prices=[{"label": "Стоимость", "amount": 250}],
                 start_parameter="toggle-bot-status"
             )
     elif text == "🟢 Стоп":
-        # Логика для остановки бота
         save_bot_status(chat_id, "stopped")
         message = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Бот остановлен 🛑."
         await send_status_message(chat_id, context, message)
     
-    # Обработка кнопки для получения бесплатных 2 дней
     elif text == "🎁 Получить 2 дня бесплатно":
-        # Проверяем, использовал ли пользователь триал
         if redis_client.get(f"trial_used:{chat_id}") == "true":
             await context.bot.send_message(chat_id, "Вы уже использовали бесплатные 2 дня!")
         else:
-            # Активируем триал
             redis_client.set(f"trial_used:{chat_id}", "true")
             end_of_subscription = int((datetime.now(timezone.utc) + timedelta(seconds=TRIAL_TTL)).timestamp())
             redis_client.setex(f"subscription_end:{chat_id}", TRIAL_TTL, end_of_subscription)
 
-            # Обновляем статус
             save_bot_status(chat_id, "running", set_sub_end=True)
             await context.bot.send_message(chat_id, "Вам предоставлены 2 дня бесплатного доступа! Подписка активирована 🟢")
+
+    # Обработка кнопки "Поддержка"
+    elif text == "💬 Поддержка":
+        await context.bot.send_message(chat_id, "Опишите вашу проблему. Мы передадим это команде поддержки.")
+
+# Обработка сообщений от пользователя
+async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    message_text = update.message.text
+
+    # Пересылаем запрос в ваш чат
+    admin_chat_id = '6770986953'  # Ваш Telegram ID
+    await context.bot.send_message(admin_chat_id, f"Запрос от пользователя {chat_id}: {message_text}")
+
+    # Сообщаем пользователю, что его запрос отправлен
+    await context.bot.send_message(chat_id, "Ваш запрос был отправлен в службу поддержки, мы скоро с вами свяжемся.")
+
+# Пример ответа пользователю из чата поддержки
+async def reply_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    response = "Мы получили ваш запрос и работаем над решением. Спасибо за терпение."
+
+    # Отправляем ответ пользователю в его чат
+    await context.bot.send_message(chat_id, response)
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.answer_pre_checkout_query(update.pre_checkout_query.id, ok=True)
@@ -160,6 +176,8 @@ def main():
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons)) # Обработка кнопки для получения бесплатных 2 дней
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_message))  # Для запроса от пользователя
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_to_user))  # Для ответа пользователю
 
     app.run_webhook(
         listen="0.0.0.0",
