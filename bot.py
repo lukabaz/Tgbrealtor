@@ -49,7 +49,7 @@ def get_settings_keyboard(chat_id: int):
     status_btn = "🟢 Стоп" if status == "running" else "🔴 Старт"
     return ReplyKeyboardMarkup([
         [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"}), KeyboardButton(status_btn)],
-        [KeyboardButton("🎁 Получить 2 дня бесплатно")],  # Кнопка для триала
+        [KeyboardButton("🎁 Бесплатно")],  # Кнопка для триала
         [KeyboardButton("💬 Поддержка")]  # Добавляем кнопку поддержки
     ], resize_keyboard=True)
 
@@ -123,9 +123,20 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Бот остановлен 🛑."
         await send_status_message(chat_id, context, message)
     
-    elif text == "🎁 Получить 2 дня бесплатно":
+    elif text == "🎁 Бесплатно":
         if redis_client.get(f"trial_used:{chat_id}") == "true":
             await context.bot.send_message(chat_id, "Вы уже использовали бесплатные 2 дня!")
+            # Сразу отправляем инвойс
+            await context.bot.send_invoice(
+            chat_id=chat_id,
+            title="Доступ к объявлениям",
+            description="Подписка на месяц",
+            payload=f"toggle_bot_status:{chat_id}:running",
+            provider_token="",
+            currency="XTR",
+            prices=[{"label": "Стоимость", "amount": 250}],
+            start_parameter="toggle-bot-status"
+        )
         else:
             redis_client.set(f"trial_used:{chat_id}", "true")
             end_of_subscription = int((datetime.now(timezone.utc) + timedelta(seconds=TRIAL_TTL)).timestamp())
