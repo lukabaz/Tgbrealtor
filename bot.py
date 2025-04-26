@@ -113,7 +113,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 title="Доступ к объявлениям",
                 description="Подписка на месяц",
                 payload=f"toggle_bot_status:{chat_id}:running",
-                provider_token="YOUR_PROVIDER_TOKEN",
+                provider_token="",
                 currency="XTR",
                 prices=[{"label": "Стоимость", "amount": 250}],
                 start_parameter="toggle-bot-status"
