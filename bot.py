@@ -6,6 +6,8 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters, Pre
 from datetime import datetime, timedelta, timezone
 import logging
 
+known_buttons = {"🔴 Старт","🟢 Стоп","🎁 Бесплатно","⚙️ Настройки","💬 Поддержка"}
+
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)  # скрываем подробные логи httpx
 logger = logging.getLogger(__name__)
@@ -49,7 +51,7 @@ def get_settings_keyboard(chat_id: int):
     status_btn = "🟢 Стоп" if status == "running" else "🔴 Старт"
     return ReplyKeyboardMarkup([
         [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"}), KeyboardButton(status_btn)],
-        [KeyboardButton("🎁 Бесплатно"), KeyboardButton("💬 Поддержка")] 
+        [KeyboardButton("🎁 Бесплатно"), KeyboardButton("💬 Поддержка", web_app={"url": "https://realestatege.netlify.app/support"})] 
     ], resize_keyboard=True)
 
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str):
@@ -88,16 +90,22 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Сохраняем метку времени сохранения фильтров в формате UTC
         redis_client.setex(f"filters_timestamp:{chat_id}", INACTIVITY_TTL, utc_timestamp)
         await send_status_message(chat_id, context, format_filters_response(filters_data))
+
+    elif "supportMessage" in filters_data:
+        message = filters_data["supportMessage"]
+        await context.bot.send_message('6770986953', f"📩 Поддержка от {chat_id}:\n{message}")
+        await context.bot.send_message(chat_id, "✅ Ваше сообщение отправлено в поддержку.")    
     else:
         await send_status_message(chat_id, context, "Ошибка: URL не сформирован")
 
 async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cm = update.my_chat_member
     if cm.chat.type == "private" and cm.old_chat_member.status == "kicked" and cm.new_chat_member.status == "member":
-        await send_status_message(cm.chat.id, context, "Добро пожаловать! Настройте фильтры или запустите бота:")
+        await send_status_message(cm.chat.id, context, "Добро пожаловать! Настройте фильтры и нажмите 🔴 Старт")
 
 # Обработчик сообщений от пользователя (в том числе сообщений через кнопки)
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    
     chat_id = update.message.chat_id
     text = update.message.text  # Извлекаем текст из сообщения
 
@@ -105,7 +113,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🔴 Старт":
         if is_subscription_active(chat_id):
             save_bot_status(chat_id, "running")
-            await send_status_message(chat_id, context, "Бот запущен!")
+            await send_status_message(chat_id, context, "🔍 Мониторинг активирован! Ждём свежих объявлений.")
         else:
             await context.bot.send_invoice(
                 chat_id=chat_id,
@@ -119,7 +127,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     elif text == "🟢 Стоп":
         save_bot_status(chat_id, "stopped")
-        message = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Бот остановлен 🛑."
+        message = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Мониторинг приостановлен 🛑."
         await send_status_message(chat_id, context, message)
     
     elif text == "🎁 Бесплатно":
@@ -144,21 +152,17 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_bot_status(chat_id, "running", set_sub_end=True)
             await context.bot.send_message(chat_id, "Вам предоставлены 2 дня бесплатного доступа! Подписка активирована 🟢")
 
-    # Обработка кнопки "Поддержка"
-    elif text == "💬 Поддержка":
-        await context.bot.send_message(chat_id, "Опишите вашу проблему. Мы передадим это команде поддержки.")
-
 # Обработка сообщений от пользователя
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     message_text = update.message.text
 
-    # Пересылаем запрос в ваш чат
-    admin_chat_id = '6770986953'  # Ваш Telegram ID
-    await context.bot.send_message(admin_chat_id, f"Запрос от пользователя {chat_id}: {message_text}")
+    # Игнорируем кнопки
+    if message_text in known_buttons:
+        return
 
-    # Сообщаем пользователю, что его запрос отправлен
-    await context.bot.send_message(chat_id, "Ваш запрос был отправлен в службу поддержки, мы скоро с вами свяжемся.")
+    # Отвечаем пользователю, что нужно обращаться через кнопку
+    await context.bot.send_message(chat_id, "❗Для обращения нажмите на панели меню кнопку Поддержка.")
 
 # Пример ответа пользователю из чата поддержки
 async def reply_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -185,10 +189,8 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons)) # Обработка кнопки для получения бесплатных 2 дней
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_message))  # Для запроса от пользователя
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_to_user))  # Для ответа пользователю
-
+    
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 5000)),
