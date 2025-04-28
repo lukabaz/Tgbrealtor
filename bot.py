@@ -18,33 +18,39 @@ INACTIVITY_TTL = int(1.5 * 30 * 24 * 60 * 60)  # 1.5 месяца
 TRIAL_TTL = 2 * 24 * 60 * 60  # 48 часов
 ACTIVE_SUBSCRIPTION_MESSAGE = "Подписка активирована 🟢"
 
-def save_filters(chat_id: int, url: str):
-    redis_client.setex(f"filters:{chat_id}", INACTIVITY_TTL, url)
+def save_user_data(chat_id: int, data: dict):
+    redis_client.hset(f"user:{chat_id}", mapping=data)
+    redis_client.expire(f"user:{chat_id}", INACTIVITY_TTL)
+
+def get_user_data(chat_id: int):
+    return redis_client.hgetall(f"user:{chat_id}")
 
 def get_end_of_subscription():
     subscription_end = datetime.now(timezone.utc) + timedelta(days=30)
     return int(subscription_end.timestamp())
 
 def save_bot_status(chat_id: int, status: str, set_sub_end: bool = False):
-    status_key = f"bot_status:{chat_id}"
-    sub_end_key = f"subscription_end:{chat_id}"
-
-    redis_client.set(status_key, status)
+    user_data = get_user_data(chat_id)
+    user_data['bot_status'] = status
 
     if set_sub_end:
         end_timestamp = get_end_of_subscription()
         ttl = end_timestamp - int(datetime.now(timezone.utc).timestamp())
-        redis_client.setex(sub_end_key, ttl, end_timestamp)
-        redis_client.expire(status_key, ttl)
+        user_data['subscription_end'] = str(end_timestamp)
+        redis_client.expire(f"user:{chat_id}", ttl)
     else:
-        redis_client.expire(status_key, INACTIVITY_TTL)
+        redis_client.expire(f"user:{chat_id}", INACTIVITY_TTL)
+
+    save_user_data(chat_id, user_data)
 
 def is_subscription_active(chat_id: int) -> bool:
-    ts = redis_client.get(f"subscription_end:{chat_id}")
+    user_data = get_user_data(chat_id)
+    ts = user_data.get('subscription_end')
     return ts and int(ts) > int(datetime.now(timezone.utc).timestamp())
 
 def get_bot_status(chat_id: int) -> str:
-    return redis_client.get(f"bot_status:{chat_id}") or "stopped"
+    user_data = get_user_data(chat_id)
+    return user_data.get('bot_status', "stopped")
 
 def get_settings_keyboard(chat_id: int):
     status = get_bot_status(chat_id)
@@ -83,12 +89,11 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filters_data = json.loads(update.message.web_app_data.data)
 
     if "url" in filters_data:
-        save_filters(chat_id, filters_data["url"])  # Сохраняем только URL
+        save_user_data(chat_id, {"filters_url": filters_data["url"]})  # Сохраняем только URL
         utc_timestamp = int(datetime.now(timezone.utc).timestamp())
         logger.info("💾 Saving filters_timestamp as: %s (UTC)", utc_timestamp)
 
-        # Сохраняем метку времени сохранения фильтров в формате UTC
-        redis_client.setex(f"filters_timestamp:{chat_id}", INACTIVITY_TTL, utc_timestamp)
+        save_user_data(chat_id, {"filters_timestamp": str(utc_timestamp)})
         await send_status_message(chat_id, context, format_filters_response(filters_data))
 
     elif "supportMessage" in filters_data:
@@ -103,13 +108,10 @@ async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if cm.chat.type == "private" and cm.old_chat_member.status == "kicked" and cm.new_chat_member.status == "member":
         await send_status_message(cm.chat.id, context, "Добро пожаловать! Настройте фильтры и нажмите 🔴 Старт")
 
-# Обработчик сообщений от пользователя (в том числе сообщений через кнопки)
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    
     chat_id = update.message.chat_id
     text = update.message.text  # Извлекаем текст из сообщения
 
-    # Обработка кнопок "Старт", "Стоп", "Получить 2 дня бесплатно"
     if text == "🔴 Старт":
         if is_subscription_active(chat_id):
             save_bot_status(chat_id, "running")
@@ -118,7 +120,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_invoice(
                 chat_id=chat_id,
                 title="Доступ к объявлениям",
-                description="Подписка на 30 дней",
+                description="Подписка на месяц",
                 payload=f"toggle_bot_status:{chat_id}:running",
                 provider_token="",
                 currency="XTR",
@@ -129,50 +131,42 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_bot_status(chat_id, "stopped")
         message = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Мониторинг приостановлен 🛑."
         await send_status_message(chat_id, context, message)
-    
+
     elif text == "🎁 Бесплатно":
-        # Сначала проверяем, активна ли уже подписка
-        if is_subscription_active(chat_id):
-            await context.bot.send_message(chat_id, "У вас уже есть активная подписка! Бесплатный период можно активировать только после её окончания.")
-        elif redis_client.get(f"trial_used:{chat_id}") == "true":
-            await context.bot.send_message(chat_id, "Вы уже использовали бесплатные 2 дня!")
-            # Отправляем инвойс
-            await context.bot.send_invoice(
-                chat_id=chat_id,
-                title="Доступ к объявлениям",
-                description="Подписка на 30 дней",
-                payload=f"toggle_bot_status:{chat_id}:running",
-                provider_token="",
-                currency="XTR",
-                prices=[{"label": "Стоимость", "amount": 250}],
-                start_parameter="toggle-bot-status"
-            )
-        else:
-            redis_client.set(f"trial_used:{chat_id}", "true")
-            end_of_subscription = int((datetime.now(timezone.utc) + timedelta(seconds=TRIAL_TTL)).timestamp())
-            redis_client.setex(f"subscription_end:{chat_id}", TRIAL_TTL, end_of_subscription)
-        
-            # Не используем set_sub_end=True, чтобы избежать перезаписи TTL
-            save_bot_status(chat_id, "running", set_sub_end=False)
-            await context.bot.send_message(chat_id, "Вам предоставлены 2 дня бесплатного доступа! Подписка активирована 🟢")
-    # Обработка сообщений от пользователя
+            # Сначала проверяем, активна ли уже подписка
+            if is_subscription_active(chat_id):
+                await context.bot.send_message(chat_id, "У вас уже есть активная подписка! Бесплатный период можно активировать только после её окончания.")
+            if redis_client.get(f"trial_used:{chat_id}") == "true":
+                await context.bot.send_message(chat_id, "Вы уже использовали бесплатные 2 дня!")
+                await context.bot.send_invoice(
+                    chat_id=chat_id,
+                    title="Доступ к объявлениям",
+                    description="Подписка на месяц",
+                    payload=f"toggle_bot_status:{chat_id}:running",
+                    provider_token="",
+                    currency="XTR",
+                    prices=[{"label": "Стоимость", "amount": 250}],
+                    start_parameter="toggle-bot-status"
+                )
+            else:
+                redis_client.set(f"trial_used:{chat_id}", "true")
+                end_of_subscription = int((datetime.now(timezone.utc) + timedelta(seconds=TRIAL_TTL)).timestamp())
+                save_user_data(chat_id, {"subscription_end": str(end_of_subscription)})
+                save_bot_status(chat_id, "running", set_sub_end=True)
+                await context.bot.send_message(chat_id, "Вам предоставлены 2 дня бесплатного доступа! Подписка активирована 🟢")
+
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     message_text = update.message.text
 
-    # Игнорируем кнопки
     if message_text in known_buttons:
         return
 
-    # Отвечаем пользователю, что нужно обращаться через кнопку
     await context.bot.send_message(chat_id, "❗Для обращения нажмите на панели меню кнопку Поддержка.")
 
-# Пример ответа пользователю из чата поддержки
 async def reply_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     response = "Мы получили ваш запрос и работаем над решением. Спасибо за терпение."
-
-    # Отправляем ответ пользователю в его чат
     await context.bot.send_message(chat_id, response)
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
