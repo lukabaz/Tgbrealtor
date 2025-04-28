@@ -1,5 +1,6 @@
 import os
 import json
+import time # добавили для проверки времени
 import redis
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, ContextTypes, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
@@ -158,8 +159,10 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             redis_client.set(f"trial_used:{chat_id}", "true")
             current_time = int(datetime.now(timezone.utc).timestamp()) # Получаем текущее время в UTC
             end_of_subscription = int((datetime.now(timezone.utc) + timedelta(seconds=TRIAL_TTL)).timestamp())
+            time_time_current = int(time.time())  # Добавляем time.time()
             logger.info(f"Activating trial for chat_id={chat_id}: "
                         f"current_time={current_time} ({datetime.fromtimestamp(current_time, tz=timezone.utc)}), "
+                        f"time_time_current={time_time_current} ({datetime.fromtimestamp(time_time_current, tz=timezone.utc)}), "
                         f"end_of_subscription={end_of_subscription} ({datetime.fromtimestamp(end_of_subscription, tz=timezone.utc)}), "
                         f"TTL={TRIAL_TTL} seconds")
             redis_client.setex(f"subscription_end:{chat_id}", TRIAL_TTL, end_of_subscription)
