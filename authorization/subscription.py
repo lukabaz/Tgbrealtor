@@ -1,7 +1,10 @@
+# authorization/subscription.py
 from datetime import datetime, timedelta, timezone
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.redis_client import redis_client
+from utils.logger import logger
+from utils.telegram_utils import retry_on_timeout
 
 
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
@@ -38,6 +41,18 @@ def save_bot_status(chat_id: int, status: str, set_sub_end: bool = False, custom
         redis_client.expire(f"user:{chat_id}", INACTIVITY_TTL)
 
     save_user_data(chat_id, user_data)
+    # Обновляем множество подписчиков
+    if status == "running":
+        sub_end = int(user_data.get("subscription_end", "0"))
+        if sub_end > int(datetime.now(timezone.utc).timestamp()):
+            redis_client.sadd("subscribed_users", chat_id)
+            logger.info(f"➕ Added chat_id={chat_id} to subscribed_users")
+        else:
+            redis_client.srem("subscribed_users", chat_id)
+            logger.info(f"➖ Removed chat_id={chat_id} from subscribed_users (subscription expired)")
+    else:
+        redis_client.srem("subscribed_users", chat_id)
+        logger.info(f"➖ Removed chat_id={chat_id} from subscribed_users (status stopped)")
 
 def is_subscription_active(chat_id: int) -> bool:
     user_data = get_user_data(chat_id)
@@ -57,12 +72,17 @@ def get_settings_keyboard(chat_id: int):
     ], resize_keyboard=True)
 
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str):
-    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_settings_keyboard(chat_id))
+    async def send():
+        return await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_settings_keyboard(chat_id))
+    await retry_on_timeout(send, chat_id=chat_id, message_text=text)
 
 async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cm = update.my_chat_member
     if cm.chat.type == "private" and cm.old_chat_member.status == "kicked" and cm.new_chat_member.status == "member":
-        await send_status_message(cm.chat.id, context, "Добро пожаловать! Настройте фильтры и нажмите 🔴 Старт")
+        welcome_text = "Добро пожаловать! Настройте фильтры и нажмите 🔴 Старт"
+        async def send_welcome():
+            return await context.bot.send_message(chat_id=cm.chat.id, text=welcome_text, reply_markup=get_settings_keyboard(cm.chat.id))
+        await retry_on_timeout(send_welcome, chat_id=cm.chat.id, message_text=welcome_text)
 
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -71,46 +91,73 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🔴 Старт":
         if is_subscription_active(chat_id):
             save_bot_status(chat_id, "running")
-            await send_status_message(chat_id, context, "🔍 Мониторинг активирован! Ждём свежих объявлений.")
+            start_text = "🔍 Мониторинг активирован! Ждём свежих ликвидаций."
+            async def send_start():
+                return await context.bot.send_message(chat_id=chat_id, text=start_text, reply_markup=get_settings_keyboard(chat_id))
+            await retry_on_timeout(send_start, chat_id=chat_id, message_text=start_text)
         else:
-            await context.bot.send_invoice(
-                chat_id=chat_id,
-                title="Доступ к объявлениям",
-                description="Подписка на 30 дней",
-                payload=f"toggle_bot_status:{chat_id}:running",
-                provider_token="",
-                currency="XTR",
-                prices=[{"label": "Стоимость", "amount": 250}],
-                start_parameter="toggle-bot-status"
-            )
-    elif text == "🟢 Стоп":
-        save_bot_status(chat_id, "stopped")
-        message = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Мониторинг приостановлен 🛑."
-        await send_status_message(chat_id, context, message)
-
-    elif text == "🎁 Бесплатно":
-            # Сначала проверяем, активна ли уже подписка
-            if is_subscription_active(chat_id):
-                await context.bot.send_message(chat_id, "У вас уже есть активная подписка! Бесплатный период можно активировать только после её окончания.")
-                return
-            if redis_client.get(f"trial_used:{chat_id}") == "true":
-                await context.bot.send_message(chat_id, "Вы уже использовали бесплатные 2 дня!")
-                await context.bot.send_invoice(
+            invoice_text = "Для активации мониторинга оформите подписку."
+            async def send_invoice():
+                return await context.bot.send_invoice(
                     chat_id=chat_id,
                     title="Доступ к объявлениям",
                     description="Подписка на 30 дней",
-                    payload=f"toggle_bot_status:{chat_id}:running",
+                    payload=f"toggle_bot_status:{chat_id}:stopped",
                     provider_token="",
                     currency="XTR",
                     prices=[{"label": "Стоимость", "amount": 250}],
                     start_parameter="toggle-bot-status"
                 )
+            await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=invoice_text)
+    elif text == "🟢 Стоп":
+        save_bot_status(chat_id, "stopped")
+        stop_text = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Мониторинг приостановлен 🛑."
+        async def send_stop():
+            return await context.bot.send_message(chat_id=chat_id, text=stop_text, reply_markup=get_settings_keyboard(chat_id))
+        await retry_on_timeout(send_stop, chat_id=chat_id, message_text=stop_text)
+    elif text == "🎁 Бесплатно":
+            # Сначала проверяем, активна ли уже подписка
+            if is_subscription_active(chat_id):
+                trial_active_text = "У вас уже есть активная подписка! Бесплатный период можно активировать только после её окончания."
+                async def send_trial_active():
+                    return await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=trial_active_text
+                    )
+                await retry_on_timeout(send_trial_active, chat_id=chat_id, message_text=trial_active_text)
+                return
+            if redis_client.get(f"trial_used:{chat_id}") == "true":
+                trial_used_text = "Вы уже использовали бесплатные 2 дня!"
+                async def send_trial_used():
+                    return await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=trial_used_text
+                    )
+                await retry_on_timeout(send_trial_used, chat_id=chat_id, message_text=trial_used_text)
+                async def send_invoice():
+                    return await context.bot.send_invoice(
+                        chat_id=chat_id,
+                        title="Доступ к объявлениям",
+                        description="Подписка на 30 дней",
+                        payload=f"toggle_bot_status:{chat_id}:stopped",
+                        provider_token="",
+                        currency="XTR",
+                        prices=[{"label": "Стоимость", "amount": 250}],
+                        start_parameter="toggle-bot-status"
+                    )
+                await retry_on_timeout(send_invoice, chat_id=chat_id, message_text="Для активации мониторинга оформите подписку.")
                 return
             # Назначаем бесплатный период
             redis_client.set(f"trial_used:{chat_id}", "true")
             trial_end = datetime.now(timezone.utc) + timedelta(seconds=TRIAL_TTL)
-            save_bot_status(chat_id, "running", custom_sub_end=trial_end)
-            await context.bot.send_message(chat_id, "Вам предоставлены 2 дня бесплатного доступа! Подписка активирована 🟢")
+            save_bot_status(chat_id, "stopped", custom_sub_end=trial_end)
+            trial_text = "Вам предоставлены 2 дня бесплатного доступа! Подписка активирована 🟢"
+            async def send_trial():
+                return await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=trial_text
+                )
+            await retry_on_timeout(send_trial, chat_id=chat_id, message_text=trial_text)
 
 async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -137,9 +184,12 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Форматируем дату
     formatted_date = new_end.strftime("%d-%m-%Y %H:%M")
-
-    # Отправляем сообщение
-    await send_status_message(chat_id, context, f"Подписка продлена! 🟢\nНовая дата окончания: {formatted_date}") 
+    payment_text = f"Подписка продлена! 🟢\nНовая дата окончания: {formatted_date}"
+    async def send_payment():
+        return await context.bot.send_message(chat_id=chat_id, text=payment_text, reply_markup=get_settings_keyboard(chat_id))
+    await retry_on_timeout(send_payment, chat_id=chat_id, message_text=payment_text) 
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.answer_pre_checkout_query(update.pre_checkout_query.id, ok=True)                      
+    async def send_pre_checkout():
+        return await context.bot.answer_pre_checkout_query(update.pre_checkout_query.id, ok=True)
+    await retry_on_timeout(send_pre_checkout, chat_id=update.pre_checkout_query.from_user.id, message_text="Pre-checkout confirmation")                      

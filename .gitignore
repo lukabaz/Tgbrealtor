@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+*.log
 *.pyc
 *.pyo
 *.pyd
@@ -7,6 +8,8 @@ __pycache__/
 .venv/
 venv/
 *.sqlite3
+cookies.json
+cookies.pkl
 
 # VS Code
 .vscode/

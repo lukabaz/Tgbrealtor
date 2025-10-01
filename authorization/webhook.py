@@ -1,10 +1,12 @@
 # authorization/webhook.py
-import json
+import orjson
 from datetime import datetime, timezone
 from telegram import Update
 from telegram.ext import ContextTypes
 from authorization.subscription import save_user_data, send_status_message
 from utils.logger import logger
+from utils.telegram_utils import retry_on_timeout
+
 
 def format_filters_response(filters):
     city_map = {'1': 'Тбилиси', '2': 'Батуми', '3': 'Кутаиси'}
@@ -29,15 +31,16 @@ def format_filters_response(filters):
 
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
-    filters_data = json.loads(update.message.web_app_data.data)
+    filters_data = orjson.loads(update.message.web_app_data.data)
 
     if "url" in filters_data:
         save_user_data(chat_id, {"filters_url": filters_data["url"]})
         utc_timestamp = int(datetime.now(timezone.utc).timestamp())
         logger.info("💾 Saving filters_timestamp as: %s (UTC)", utc_timestamp)
         save_user_data(chat_id, {"filters_timestamp": str(utc_timestamp)})
-        await send_status_message(chat_id, context, format_filters_response(filters_data))
-
+        async def send_confirmation():
+            await send_status_message(chat_id, context, format_filters_response(filters_data))
+        await retry_on_timeout(send_confirmation, chat_id=chat_id, message_text="Фильтры сохранены!")
     elif "supportMessage" in filters_data:
         message = filters_data["supportMessage"]
         await context.bot.send_message('6770986953', f"📩 Поддержка от {chat_id}:\n{message}")
