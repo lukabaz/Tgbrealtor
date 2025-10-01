@@ -1,6 +1,6 @@
 # authorization/support.py
-from python_telegram_bot import Update  # Исправлено: из библиотеки
-from python_telegram_bot.ext import ContextTypes  # Исправлено: из библиотеки
+from telegram import Update
+from telegram.ext import ContextTypes
 import re
 from utils.logger import logger
 

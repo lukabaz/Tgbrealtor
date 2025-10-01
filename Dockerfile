@@ -18,9 +18,11 @@ RUN apt-get update && apt-get install -y \
     chmod +x /usr/local/bin/chromedriver && \
     rm -rf /var/lib/apt/lists/* /tmp/* /etc/apt/sources.list.d/google-chrome.list
 
-# Установка Python-зависимостей с отладкой
-RUN pip install --no-cache-dir python-telegram-bot[webhooks]==21.10 && \
+# Установка Python-зависимостей
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir python-telegram-bot[webhooks]==21.10 && \
     pip install --no-cache-dir -r requirements.txt && \
-    pip list | grep python-telegram-bot
+    pip list | grep python-telegram-bot && \
+    python -c "import telegram; print('telegram module imported successfully')"
 
 CMD ["python", "app.py"]

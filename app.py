@@ -1,8 +1,8 @@
 # app.py
 import os
 from flask import Flask, request
-from python_telegram_bot import Update
-from python_telegram_bot.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler, Dispatcher
+from telegram import Update
+from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler, Dispatcher
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from config import TELEGRAM_TOKEN, WEBHOOK_URL
