@@ -1,8 +1,4 @@
 # app.py
-import os
-import asyncio
-from flask import Flask, request
-from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -147,6 +143,7 @@ async def send_error_message(chat_id, message):
 
 
 def run_parser():
+    logging.info("🚀 run_parser() triggered")
     current_timestamp = int(time.time())
     active_users = []
     for key in redis_client.scan_iter("user:*"):
@@ -307,10 +304,13 @@ def run_parser():
 
 # Scheduler для парсера
 scheduler = BackgroundScheduler()
-scheduler.add_job(run_parser, IntervalTrigger(minutes=12))
+scheduler.add_job(run_parser, IntervalTrigger(minutes=6))
 scheduler.start()
+logging.info("✅ Scheduler started successfully")
+logging.info(f"🔁 Current jobs in scheduler: {scheduler.get_jobs()}")
 
 if __name__ == "__main__":
+    logging.info("📡 Starting webhook server")
     # Запускаем вебхук для Telegram
     bot_app.run_webhook(
         listen="0.0.0.0",
