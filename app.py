@@ -1,11 +1,12 @@
 # app.py
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from config import TELEGRAM_TOKEN, WEBHOOK_URL
+from config import TELEGRAM_TOKEN, WEBHOOK_URL, PORT
 from authorization.subscription import welcome_new_user, handle_buttons, successful_payment, pre_checkout
 from authorization.webhook import webhook_update
 from authorization.support import handle_user_message
@@ -26,7 +27,12 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 logging.basicConfig(filename="app.log", level=logging.INFO, format="%(asctime)s - %(message)s", encoding="utf-8")
 
 # Flask приложение
-app = Flask(__name__)
+#app = Flask(__name__)
+
+# Health check endpoint только для Render
+#@app.route('/healthz')
+#def healthz():
+    #return 'ok', 200
 
 # Инициализация Telegram бота
 bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -39,17 +45,6 @@ bot_app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_paymen
 bot_app.add_handler(PreCheckoutQueryHandler(pre_checkout))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_message))
 
-# Health check endpoint для Render
-@app.route('/healthz')
-def healthz():
-    return 'ok', 200
-
-# Webhook endpoint
-@app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), bot_app.bot)
-    await bot_app.process_update(update)
-    return 'ok'
 
 # Логика парсера (из parser.py)
 def close_modal_if_exists(driver):
@@ -146,6 +141,10 @@ def is_valid_card_href(card):
     except Exception as e:
         logging.warning(f"Ошибка проверки href карточки: {e}")
         return False
+    
+async def send_error_message(chat_id, message):
+    await bot_app.bot.send_message(chat_id=chat_id, text=message)
+
 
 def run_parser():
     current_timestamp = int(time.time())
@@ -312,7 +311,14 @@ scheduler.add_job(run_parser, IntervalTrigger(minutes=5))
 scheduler.start()
 
 if __name__ == "__main__":
-    # Устанавливаем webhook при старте
-    bot_app.bot.set_webhook(url=WEBHOOK_URL)
-    # Запускаем Flask
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))     
+    # Запускаем вебхук для Telegram
+    bot_app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TELEGRAM_TOKEN,
+        webhook_url=WEBHOOK_URL,
+        allowed_updates=["message", "pre_checkout_query", "my_chat_member"]
+    )
+
+    # Запускаем Flask только для /healthz (в отдельном потоке не требуется, так как run_webhook блокирует)
+    # app.run(host="0.0.0.0", port=PORT)  # Не запускаем, так как run_webhook уже использует PORT   
