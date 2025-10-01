@@ -40,7 +40,12 @@ bot_app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_paymen
 bot_app.add_handler(PreCheckoutQueryHandler(pre_checkout))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_message))
 
-     # Webhook endpoint
+# Health check endpoint для Render
+@app.route('/healthz')
+def healthz():
+    return 'ok', 200
+
+# Webhook endpoint
 @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot_app.bot)

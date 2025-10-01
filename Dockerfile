@@ -5,7 +5,7 @@ COPY . .
 
 # Установка Chrome и ChromeDriver
 RUN apt-get update && apt-get install -y \
-    wget unzip curl \
+    wget unzip curl gnupg \
     fonts-liberation libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 libgtk-3-0 libdrm2 libgbm1 \
     --no-install-recommends && \
     wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /usr/share/keyrings/google-chrome.gpg && \
