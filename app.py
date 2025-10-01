@@ -307,7 +307,7 @@ def run_parser():
 
 # Scheduler для парсера
 scheduler = BackgroundScheduler()
-scheduler.add_job(run_parser, IntervalTrigger(minutes=5))
+scheduler.add_job(run_parser, IntervalTrigger(minutes=12))
 scheduler.start()
 
 if __name__ == "__main__":
