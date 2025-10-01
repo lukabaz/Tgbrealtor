@@ -1,7 +1,7 @@
 # authorization/subscription.py
 from datetime import datetime, timedelta, timezone
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
-from telegram.ext import ContextTypes
+from python_telegram_bot import Update, KeyboardButton, ReplyKeyboardMarkup  # Исправлено: из библиотеки
+from python_telegram_bot.ext import ContextTypes  # Исправлено: из библиотеки
 from utils.redis_client import redis_client
 from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout

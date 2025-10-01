@@ -1,12 +1,11 @@
 # authorization/webhook.py
 import orjson
 from datetime import datetime, timezone
-from telegram import Update
-from telegram.ext import ContextTypes
+from python_telegram_bot import Update  # Исправлено: из библиотеки
+from python_telegram_bot.ext import ContextTypes  # Исправлено: из библиотеки
 from authorization.subscription import save_user_data, send_status_message
 from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
-
 
 def format_filters_response(filters):
     city_map = {'1': 'Тбилиси', '2': 'Батуми', '3': 'Кутаиси'}

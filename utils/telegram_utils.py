@@ -1,5 +1,5 @@
 # utils/telegram_utils.py
-from telegram.error import TimedOut
+from python_telegram_bot.error import TimedOut  # Исправлено: из библиотеки
 import asyncio
 import time
 from collections import defaultdict
