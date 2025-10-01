@@ -2,7 +2,7 @@
 import os
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler, Dispatcher
+from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from config import TELEGRAM_TOKEN, WEBHOOK_URL
@@ -30,7 +30,6 @@ app = Flask(__name__)
 
 # Инициализация Telegram бота
 bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
-dispatcher = Dispatcher(bot_app.bot, None, workers=0)
 
 # Handlers для бота
 bot_app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
@@ -47,9 +46,9 @@ def healthz():
 
 # Webhook endpoint
 @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
-def webhook():
+async def webhook():
     update = Update.de_json(request.get_json(force=True), bot_app.bot)
-    dispatcher.process_update(update)
+    await bot_app.process_update(update)
     return 'ok'
 
 # Логика парсера (из parser.py)
