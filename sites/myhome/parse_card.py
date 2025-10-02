@@ -1,129 +1,113 @@
 import time
 import random
-import logging
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from utils.logger import setup_logger
+
+# Настройка логгера
+logger = setup_logger("ss_parser", "logs/parser.log")
 
 def parse_card(driver, url):
-    time.sleep(random.uniform(3, 5))  # Ещё одна задержка перед загрузкой страницы
+    """Парсинг карточки с сайта ss.ge"""
+    logger.info(f"Parsing card: {url}")
+    time.sleep(random.uniform(3, 5))
     driver.get(url)
 
-    try: title = driver.find_element(By.CSS_SELECTOR, "h1").text
-    except NoSuchElementException: title = "❌ Заголовок не найден"
-
-    try: area = driver.find_element(By.XPATH, "//span[contains(text(), 'Площадь') or contains(text(), 'Area')]/following-sibling::span").text
-    except NoSuchElementException: area = "❌ Площадь не найдена"
-
-    try: rooms = driver.find_element(By.XPATH, "//span[contains(text(), 'Комната') or contains(text(), 'Rooms')]/following-sibling::span").text
-    except NoSuchElementException: rooms = "❌ Комнаты не найдены"
-
-    try: floor = driver.find_element(By.XPATH, "//span[contains(text(), 'этаж') or contains(text(), 'Floor')]/following-sibling::span").text
-    except NoSuchElementException: floor = "❌ Этаж не найден"
-
-    try: date = driver.find_element(By.CSS_SELECTOR, "div.flex.items-center.flex-shrink-0.order-1 span").text
-    except NoSuchElementException: date = "❌ Дата не найдена"
-    # try: ad_id = driver.find_element(By.XPATH, "//span[contains(text(), 'ID')]").text.split(":")[1].strip()
-    # except NoSuchElementException: ad_id = "❌ ID не найден"
     try:
-        sticky_container = WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'col-span-3') and contains(@class, 'sticky')]"))
-        )
-        driver.execute_script("window.scrollBy(0, 150);")
-        time.sleep(random.uniform(0.8, 1.5))
+        title = driver.find_element(By.CSS_SELECTOR, "h1").text
+        logger.info(f"Extracted title: {title}")
+    except NoSuchElementException:
+        title = "❌ Заголовок не найден"
+        logger.warning(f"Title not found for {url}")
 
-        try:
-            price_container = sticky_container.find_element(By.XPATH, ".//div[contains(@class, 'font-tbcx-bold')]")
-            spans = price_container.find_elements(By.TAG_NAME, "span")
-            price = "".join(span.text for span in spans).strip()
-        except NoSuchElementException:
-            price = "❌ Цена не найдена"
-
-        try:
-            owner_tag = sticky_container.find_element(
-                By.XPATH, ".//div[contains(text(), 'Собственник') or contains(text(), 'Агент') or contains(text(), 'Owner') or contains(text(), 'Agent')]"
-            ).text
-        except NoSuchElementException:
-            owner_tag = "❌ Продавец не найден"
-
-        # Телефон
-        try:
-            phone_span = sticky_container.find_element(
-                By.XPATH, ".//button//span[contains(text(), '+995')]"
-            )
-            phone = phone_span.text.strip()
-            print(f"Телефон сразу доступен: {phone}")
-        except NoSuchElementException:
-            try:
-                phone_button = WebDriverWait(sticky_container, 7).until(
-                    EC.element_to_be_clickable((By.XPATH, ".//button[.//span[starts-with(text(), 'Показать номер') or starts-with(text(), 'Show number')]]"))
-                )
-                print("Кнопка найдена.")
-                time.sleep(random.uniform(0.8, 1.5))
-                phone_button.click()
-                time.sleep(random.uniform(0.8, 1.5))
-
-                phone_span = WebDriverWait(sticky_container, 5).until(
-                    EC.visibility_of_element_located((By.XPATH, ".//button//span[contains(text(), '+995')]"))
-                )
-                phone = phone_span.text.strip()
-                print(f"Телефон успешно получен после клика: {phone}")
-            except Exception as e:
-                logging.warning(f"Не удалось получить номер телефона: {e}")
-                phone = "❌ Телефон не найден"
-
-        images = []
-        try:
-            WebDriverWait(driver, 5).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.swiper-slide img")))
-            img_elements = driver.find_elements(By.CSS_SELECTOR, "div.swiper-slide img")
-            seen = set()
-            for img in img_elements:
-                src = img.get_attribute("src")
-                if src and src not in seen:
-                    seen.add(src)
-                    images.append(src)
-                    if len(images) == 2:  # ограничиваем до 2 ссылок
-                        break
-        except Exception as e:
-            logging.warning(f"Ошибка при загрузке фото: {e}")
-    except Exception as e:
-        logging.warning(f"Ошибка при получении sticky контейнера или его содержимого: {e}")
+    try:
+        price = driver.find_element(By.CSS_SELECTOR, "div.price").text
+        logger.info(f"Extracted price: {price}")
+    except NoSuchElementException:
         price = "❌ Цена не найдена"
+        logger.warning(f"Price not found for {url}")
+
+    try:
+        area = driver.find_element(By.XPATH, "//span[contains(text(), 'Area')]/following-sibling::span").text
+        logger.info(f"Extracted area: {area}")
+    except NoSuchElementException:
+        area = "❌ Площадь не найдена"
+        logger.warning(f"Area not found for {url}")
+
+    try:
+        rooms = driver.find_element(By.XPATH, "//span[contains(text(), 'Rooms')]/following-sibling::span").text
+        logger.info(f"Extracted rooms: {rooms}")
+    except NoSuchElementException:
+        rooms = "❌ Комнаты не найдены"
+        logger.warning(f"Rooms not found for {url}")
+
+    try:
+        floor = driver.find_element(By.XPATH, "//span[contains(text(), 'Floor')]/following-sibling::span").text
+        logger.info(f"Extracted floor: {floor}")
+    except NoSuchElementException:
+        floor = "❌ Этаж не найден"
+        logger.warning(f"Floor not found for {url}")
+
+    try:
+        date = driver.find_element(By.CSS_SELECTOR, "div.date").text
+        logger.info(f"Extracted date: {date}")
+    except NoSuchElementException:
+        date = "❌ Дата не найдена"
+        logger.warning(f"Date not found for {url}")
+
+    try:
+        owner_tag = driver.find_element(By.XPATH, "//div[contains(text(), 'Owner') or contains(text(), 'Agent')]").text
+        logger.info(f"Extracted owner: {owner_tag}")
+    except NoSuchElementException:
         owner_tag = "❌ Продавец не найден"
+        logger.warning(f"Owner not found for {url}")
+
+    try:
+        phone = driver.find_element(By.XPATH, "//span[contains(text(), '+995')]").text
+        logger.info(f"Extracted phone: {phone}")
+    except NoSuchElementException:
         phone = "❌ Телефон не найден"
-        images = []        
+        logger.warning(f"Phone not found for {url}")
 
-    logging.info("Объявление:")
-    logging.info(f"Заголовок: {title}")
-    logging.info(f"Цена: {price}")
-    logging.info(f"Площадь: {area}")
-    logging.info(f"Комнаты: {rooms}")
-    logging.info(f"Этаж: {floor}")
-    # logging.info(f"Дата публикации: {date}")
-    logging.info(f"Телефон: {phone}")
-    logging.info(f"Продавец: {owner_tag}")
-    # logging.info(f"ID: {ad_id}")
-    logging.info(f"Фото: {len(images)} шт.")
-    for i, img in enumerate(images):
-        logging.info(f"   [{i+1}] {img}")    
+    images = []
+    try:
+        img_elements = driver.find_elements(By.CSS_SELECTOR, "img.property-image")
+        seen = set()
+        for img in img_elements:
+            src = img.get_attribute("src")
+            if src and src not in seen:
+                seen.add(src)
+                images.append(src)
+                if len(images) == 2:
+                    break
+        logger.info(f"Extracted {len(images)} images")
+        for i, img in enumerate(images):
+            logger.info(f"Image [{i+1}]: {img}")
+    except Exception as e:
+        logger.warning(f"Error loading images: {e}")
 
-    print("📋 Объявление:")
-    print("🔹 Заголовок:", title)
-    print("💰 Цена:", price)
-    print("📐 Площадь:", area)
-    print("🚪 Комнаты:", rooms)
-    print("🏢 Этаж:", floor)
-    # print("📅 Дата публикации:", date)
-    print("📞 Телефон:", phone)
-    print("👤 Продавец:", owner_tag)
-    # print("🆔 ID:", ad_id)
-    print("🖼 Фото:", len(images), "шт.")
-    for i, img in enumerate(images):
-        print(f"   [{i+1}] {img}")
-    print("-" * 40)
+    logger.info("Parsed advertisement:")
+    logger.info(f"Title: {title}")
+    logger.info(f"Price: {price}")
+    logger.info(f"Area: {area}")
+    logger.info(f"Rooms: {rooms}")
+    logger.info(f"Floor: {floor}")
+    logger.info(f"Date: {date}")
+    logger.info(f"Phone: {phone}")
+    logger.info(f"Owner: {owner_tag}")
+    logger.info(f"Images: {len(images)} шт.")
 
     return dict(
-        title=title, price=price, area=area, rooms=rooms, floor=floor,
-        date=date, phone=phone, owner_tag=owner_tag, link=url, images=images
+        title=title,
+        price=price,
+        area=area,
+        rooms=rooms,
+        floor=floor,
+        date=date,
+        phone=phone,
+        owner_tag=owner_tag,
+        link=url,
+        images=images
     )

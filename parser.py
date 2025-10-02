@@ -3,8 +3,7 @@ import signal
 import sys
 import time
 import random
-import logging
-import os
+import asyncio
 from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -12,32 +11,27 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
-
+from telegram.ext import Application
+from config import TELEGRAM_TOKEN
 from utils.redis_client import redis_client
 from sites.router import get_parse_function
 from utils.driver import init_driver
 from tg.sender import send_to_telegram
+from utils.logger import setup_logger
 
-# Создаем директорию для логов
-os.makedirs("logs", exist_ok=True)
-
-# Настройка логирования для парсера
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("logs/parser.log", encoding="utf-8"),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger("selenium_parser")
+# Настройка логгера
+logger = setup_logger("selenium_parser", "logs/parser.log")
 
 class SeleniumParser:
     def __init__(self):
         self.scheduler = None
         self.running = False
-        
+        self.bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    async def send_error_message(self, chat_id, message):
+        """Отправка сообщения об ошибке в Telegram"""
+        await self.bot_app.bot.send_message(chat_id=chat_id, text=message)
+
     def close_modal_if_exists(self, driver):
         """Закрытие модального окна если существует"""
         logger.info("Проверяем наличие модального окна")
@@ -291,6 +285,7 @@ class SeleniumParser:
                         
         except Exception as e:
             logger.error(f"Ошибка парсинга: {e}")
+            asyncio.run(self.send_error_message('6770986953', f"Ошибка парсера: {e}"))
         finally:
             driver.quit()
 
@@ -337,6 +332,7 @@ class SeleniumParser:
             
         except Exception as e:
             logger.error(f"❌ Error starting parser: {e}")
+            asyncio.run(self.send_error_message('6770986953', f"Ошибка старта парсера: {e}"))
             raise
 
 if __name__ == "__main__":

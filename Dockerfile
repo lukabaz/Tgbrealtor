@@ -23,7 +23,6 @@ RUN apt-get update && apt-get install -y \
 
 # Установка Python-зависимостей
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir python-telegram-bot[webhooks]==21.10 && \
     pip install --no-cache-dir -r requirements.txt && \
     pip list | grep python-telegram-bot && \
     python -c "import telegram; print('telegram module imported successfully')"
@@ -35,14 +34,13 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN echo '#!/bin/bash\n\
 trap "echo \"Received SIGTERM, shutting down gracefully...\"; supervisorctl stop all; exit 0" SIGTERM\n\
 echo "Starting supervisord..."\n\
-exec supervisord -c /etc/supervisor/conf.d/supervisord.conf &\n\
-wait $!' > /app/start.sh && chmod +x /app/start.sh
+exec supervisord -c /etc/supervisor/conf.d/supervisord.conf' > /app/start.sh && chmod +x /app/start.sh
 
-# Установка переменных окружения для supervisor
+# Установка переменных окружения
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
 # Expose порт для webhook
 EXPOSE $PORT
 
-CMD ["/app/start.sh"]
+CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

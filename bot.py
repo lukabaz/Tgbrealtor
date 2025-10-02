@@ -1,28 +1,16 @@
 # bot.py - Telegram Bot Process
 import signal
 import sys
-import logging
 import os
 from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
 from config import TELEGRAM_TOKEN, WEBHOOK_URL, PORT
 from authorization.subscription import welcome_new_user, handle_buttons, successful_payment, pre_checkout
 from authorization.webhook import webhook_update
 from authorization.support import handle_user_message
+from utils.logger import setup_logger
 
-# Создаем директорию для логов
-os.makedirs("logs", exist_ok=True)
-
-# Настройка логирования для бота
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("logs/bot.log", encoding="utf-8"),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger("telegram_bot")
+# Настройка логгера
+logger = setup_logger("telegram_bot", "logs/bot.log")
 
 class TelegramBot:
     def __init__(self):
