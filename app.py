@@ -13,6 +13,7 @@ from tg.sender import send_to_telegram
 import time
 import random
 import logging
+import asyncio
 from datetime import datetime, timezone, timedelta
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -308,6 +309,8 @@ scheduler.add_job(run_parser, IntervalTrigger(minutes=6))
 scheduler.start()
 logging.info("✅ Scheduler started successfully")
 logging.info(f"🔁 Current jobs in scheduler: {scheduler.get_jobs()}")
+
+
 
 if __name__ == "__main__":
     logging.info("📡 Starting webhook server")

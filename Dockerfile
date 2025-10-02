@@ -3,9 +3,12 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY . .
 
-# Установка Chrome и ChromeDriver
+# Создание директории для логов
+RUN mkdir -p /app/logs
+
+# Установка системных зависимостей включая supervisor
 RUN apt-get update && apt-get install -y \
-    wget unzip curl gnupg \
+    wget unzip curl gnupg supervisor \
     fonts-liberation libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 libgtk-3-0 libdrm2 libgbm1 \
     --no-install-recommends && \
     wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /usr/share/keyrings/google-chrome.gpg && \
@@ -25,4 +28,21 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip list | grep python-telegram-bot && \
     python -c "import telegram; print('telegram module imported successfully')"
 
-CMD ["python", "app.py"]
+# Копирование конфигурации supervisord
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Создание скрипта запуска с graceful shutdown
+RUN echo '#!/bin/bash\n\
+trap "echo \"Received SIGTERM, shutting down gracefully...\"; supervisorctl stop all; exit 0" SIGTERM\n\
+echo "Starting supervisord..."\n\
+exec supervisord -c /etc/supervisor/conf.d/supervisord.conf &\n\
+wait $!' > /app/start.sh && chmod +x /app/start.sh
+
+# Установка переменных окружения для supervisor
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+# Expose порт для webhook
+EXPOSE $PORT
+
+CMD ["/app/start.sh"]
