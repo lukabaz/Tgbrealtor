@@ -3,6 +3,7 @@ redis==5.0.8
 selenium==4.25.0
 apscheduler==3.10.4
 supervisor==4.2.5
+aiohttp==3.9.5
 
 
 
