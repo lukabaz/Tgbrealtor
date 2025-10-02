@@ -44,4 +44,4 @@ ENV PYTHONPATH=/app
 # Expose порт для webhook
 EXPOSE $PORT
 
-CMD ["supervisord", "-c", "/etc/supervisor/conf.d/test_supervisord.conf"]
+CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

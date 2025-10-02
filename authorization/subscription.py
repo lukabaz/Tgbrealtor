@@ -7,7 +7,7 @@ from utils.telegram_utils import retry_on_timeout
 from utils.logger import setup_logger
 
 # Настройка логгера
-logger = setup_logger("support", "logs/bot.log")
+logger = setup_logger("subscription", "logs/bot.log")
 
 
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца

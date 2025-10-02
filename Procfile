@@ -1,1 +1,1 @@
-web: supervisord -c /etc/supervisor/conf.d/test_supervisord.conf
+web: supervisord -c /etc/supervisor/conf.d/supervisord.conf
