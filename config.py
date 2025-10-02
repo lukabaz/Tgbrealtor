@@ -24,6 +24,14 @@ else:
     if not WEBHOOK_URL:
         raise ValueError("WEBHOOK_URL не найден в переменных среды или .env")
 
-# Порт для Flask
-PORT = int(os.getenv("PORT", 5000))
+# Порт для webhook (Render устанавливает автоматически)
+PORT = int(os.getenv("PORT", 10000))
+
+# Диагностическая информация
+print(f"🔧 Config loaded:")
+print(f"  - TELEGRAM_TOKEN: {'SET' if TELEGRAM_TOKEN else 'NOT SET'}")
+print(f"  - REDIS_URL: {'SET' if REDIS_URL else 'NOT SET'}")
+print(f"  - WEBHOOK_URL: {WEBHOOK_URL}")
+print(f"  - PORT: {PORT}")
+print(f"  - RENDER_HOSTNAME: {os.getenv('RENDER_EXTERNAL_HOSTNAME', 'NOT SET')}")
 
