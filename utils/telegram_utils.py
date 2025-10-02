@@ -3,7 +3,9 @@ from telegram.error import TimedOut
 import asyncio
 import time
 from collections import defaultdict
-from utils.logger import logger
+from utils.logger import setup_logger
+
+logger = setup_logger("telegram_utils", "logs/telegram_utils.log")
 
 class RateLimiter:
     def __init__(self, messages_per_second=1, global_messages_per_second=30):
