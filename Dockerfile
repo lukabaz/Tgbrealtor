@@ -29,7 +29,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Копирование конфигурации supervisord
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY test_supervisord.conf /etc/supervisor/conf.d/test_supervisord.conf
 
 # Создание скрипта запуска с graceful shutdown
 RUN echo '#!/bin/bash\n\

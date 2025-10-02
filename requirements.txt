@@ -1,9 +1,11 @@
-python-telegram-bot==21.10
-redis==5.0.8
-selenium==4.25.0
+python-telegram-bot[webhooks]==21.10
+orjson==3.10.18
+selenium==4.31.0
+redis==5.2.1
+requests==2.32.3
+flask==2.3.3
 apscheduler==3.10.4
-supervisor==4.2.5
-aiohttp==3.9.5
+python-dotenv==1.0.0
 
 
 
