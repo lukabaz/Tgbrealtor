@@ -1,1 +1,1 @@
-web: supervisord -c /etc/supervisor/conf.d/supervisord.conf
+worker: python bot.py

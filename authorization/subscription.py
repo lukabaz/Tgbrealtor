@@ -3,11 +3,8 @@ from datetime import datetime, timedelta, timezone
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.redis_client import redis_client
+from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
-from utils.logger import setup_logger
-
-# Настройка логгера
-logger = setup_logger("subscription", "logs/bot.log")
 
 
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца

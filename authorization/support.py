@@ -2,10 +2,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 import re
-from utils.logger import setup_logger
-
-# Настройка логгера
-logger = setup_logger("support", "logs/bot.log")
+from utils.logger import logger
 
 async def handle_support_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.debug("📥 handle_support_text triggered")
