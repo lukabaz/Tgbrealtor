@@ -105,7 +105,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     payload=f"toggle_bot_status:{chat_id}:stopped",
                     provider_token="",
                     currency="XTR",
-                    prices=[{"label": "Стоимость", "amount": 250}],
+                    prices=[{"label": "Стоимость", "amount": 2500}],
                     start_parameter="toggle-bot-status"
                 )
             await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=invoice_text)
@@ -142,7 +142,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         payload=f"toggle_bot_status:{chat_id}:stopped",
                         provider_token="",
                         currency="XTR",
-                        prices=[{"label": "Стоимость", "amount": 250}],
+                        prices=[{"label": "Стоимость", "amount": 2500}],
                         start_parameter="toggle-bot-status"
                     )
                 await retry_on_timeout(send_invoice, chat_id=chat_id, message_text="Для активации мониторинга оформите подписку.")
