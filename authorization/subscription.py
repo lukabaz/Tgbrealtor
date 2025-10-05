@@ -37,7 +37,7 @@ def save_bot_status(chat_id: int, status: str, set_sub_end: bool = False, custom
         user_data['subscription_end'] = str(end_timestamp)
         redis_client.expire(f"user:{chat_id}", ttl)
     else:
-        # Подписка не активна, оставляем Redis-ключ живым 1.2 месяца
+        # Подписка не активна, оставляем Redis-ключ живым 1.2 месяца чтобы не мог использовать триал
         redis_client.expire(f"user:{chat_id}", INACTIVITY_TTL)
 
     save_user_data(chat_id, user_data)
