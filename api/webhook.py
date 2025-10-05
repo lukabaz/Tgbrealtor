@@ -59,7 +59,7 @@ async def netlify_webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post(f"/{TELEGRAM_TOKEN}")  # POST от Telegram (updates)
+@app.post(f"/{TELEGRAM_TOKEN}")  # POST от Telegram (updates).
 async def telegram_webhook(request: Request):
     try:
         body = await request.body()
