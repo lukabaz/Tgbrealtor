@@ -8,5 +8,7 @@ __pycache__/
 venv/
 *.sqlite3
 
-# VS Code
+# VS Code 
 .vscode/
+Procfile
+bot.py
