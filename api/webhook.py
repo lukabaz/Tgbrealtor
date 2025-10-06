@@ -14,11 +14,11 @@ from config import TELEGRAM_TOKEN
 
 app = FastAPI()
 
-# Global Application (init on startup for cold start)
+# Global Application (init lazily in endpoints to handle serverless cold starts)
 application = None
 
-@app.on_event("startup")
-async def startup_event():
+def init_application():
+    """Helper to initialize Application and add handlers."""
     global application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     # Add handlers from bot.py
@@ -28,10 +28,13 @@ async def startup_event():
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     application.add_handler(PreCheckoutQueryHandler(pre_checkout))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_message))
-    logger.info("Bot application started on Vercel")
+    logger.info("Bot application initialized on cold start")
 
 @app.post("/webhook")  # POST от Netlify (web_app_data)
 async def netlify_webhook(request: Request):
+    global application
+    if application is None:
+        init_application()
     try:
         body = await request.body()
         data = orjson.loads(body)  # Как в webhook.py
@@ -62,6 +65,9 @@ async def netlify_webhook(request: Request):
 
 @app.post(f"/{TELEGRAM_TOKEN}")  # POST от Telegram (updates).
 async def telegram_webhook(request: Request):
+    global application
+    if application is None:
+        init_application()
     try:
         body = await request.body()
         update_json = orjson.loads(body)
