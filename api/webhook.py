@@ -5,23 +5,26 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters, Pre
 import orjson  # Для JSON parse (как в webhook.py)
 import asyncio
 from datetime import datetime, timezone
-from authorization.subscription import save_user_data, send_status_message, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers
+from authorization.subscription import save_user_data, send_status_message, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers из subscription (без handle_user_message)
 from authorization.webhook import webhook_update, format_filters_response  # Импорт webhook_update и format
-from authorization.support import handle_user_message
+from authorization.support import handle_user_message  # Отдельный импорт для handle_user_message
 from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
 from config import TELEGRAM_TOKEN
 
 app = FastAPI()
 
-# Global Application (init lazily in endpoints to handle serverless cold starts)
+# Global Application (lazy init в эндпоинтах для serverless cold starts)
 application = None
 
-def init_application():
-    """Helper to initialize Application and add handlers."""
+async def init_application():
+    """Async helper: инициализирует Application, добавляет handlers и логирует."""
     global application
+    if application is not None:  # Избегаем повторной init
+        return
     application = Application.builder().token(TELEGRAM_TOKEN).build()
-    # Add handlers from bot.py
+    await application.initialize()  # Обязательно для v21+: инициализирует bot и internals
+    # Add handlers from bot.py (как в startup, но здесь)
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
     application.add_handler(ChatMemberHandler(welcome_new_user, ChatMemberHandler.MY_CHAT_MEMBER))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
@@ -34,7 +37,7 @@ def init_application():
 async def netlify_webhook(request: Request):
     global application
     if application is None:
-        init_application()
+        await init_application()  # Lazy init перед использованием bot
     try:
         body = await request.body()
         data = orjson.loads(body)  # Как в webhook.py
@@ -67,11 +70,11 @@ async def netlify_webhook(request: Request):
 async def telegram_webhook(request: Request):
     global application
     if application is None:
-        init_application()
+        await init_application()  # Lazy init перед process_update
     try:
         body = await request.body()
         update_json = orjson.loads(body)
-        update = Update.de_json(update_json, application.bot)
+        update = Update.de_json(update_json, application.bot)  # Теперь bot готов
         await application.process_update(update)
         return {"ok": True}
     except Exception as e:
@@ -81,3 +84,4 @@ async def telegram_webhook(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
+    
