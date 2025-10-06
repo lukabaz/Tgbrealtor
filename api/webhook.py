@@ -5,8 +5,9 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters, Pre
 import orjson  # Для JSON parse (как в webhook.py)
 import asyncio
 from datetime import datetime, timezone
-from authorization.subscription import save_user_data, send_status_message, welcome_new_user, handle_buttons, successful_payment, pre_checkout, handle_user_message  # Импорт handlers
+from authorization.subscription import save_user_data, send_status_message, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers
 from authorization.webhook import webhook_update, format_filters_response  # Импорт webhook_update и format
+from authorization.support import handle_user_message
 from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
 from config import TELEGRAM_TOKEN
