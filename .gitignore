@@ -10,5 +10,3 @@ venv/
 
 # VS Code 
 .vscode/
-Procfile
-bot.py
