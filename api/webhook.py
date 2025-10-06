@@ -12,7 +12,11 @@ from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
 from config import TELEGRAM_TOKEN
 
-app = FastAPI()
+app = FastAPI(
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
+)
 
 # Global Application (lazy init в эндпоинтах для serverless cold starts)
 application = None
@@ -66,7 +70,7 @@ async def netlify_webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post(f"/{TELEGRAM_TOKEN}")  # POST от Telegram (updates).
+@app.post("/telegram-webhook")  # POST от Telegram (updates).
 async def telegram_webhook(request: Request):
     global application
     if application is None:
