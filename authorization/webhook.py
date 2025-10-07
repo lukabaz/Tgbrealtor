@@ -5,7 +5,11 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from authorization.subscription import save_user_data, send_status_message
 from utils.logger import logger
+from utils.redis_client import redis_client
 from utils.telegram_utils import retry_on_timeout
+from utils.translations import translations
+
+INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 
 
 def format_filters_response(filters):

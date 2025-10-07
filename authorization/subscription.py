@@ -5,15 +5,16 @@ from telegram.ext import ContextTypes
 from utils.redis_client import redis_client
 from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
+from utils.translations import translations  # Импортируем переводы
 
 
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 TRIAL_TTL = 2 * 24 * 60 * 60  # 48 часов
-ACTIVE_SUBSCRIPTION_MESSAGE = "Подписка активирована 🟢"
+#ACTIVE_SUBSCRIPTION_MESSAGE = "Подписка активирована 🟢"
 
 def save_user_data(chat_id: int, data: dict):
     redis_client.hset(f"user:{chat_id}", mapping=data)
-    redis_client.expire(f"user:{chat_id}", INACTIVITY_TTL)
+    redis_client.expire(f"user:{chat_id}", INACTIVITY_TTL) # перенести в вебхук
 
 def get_user_data(chat_id: int):
     return redis_client.hgetall(f"user:{chat_id}")
@@ -63,101 +64,101 @@ def get_bot_status(chat_id: int) -> str:
     user_data = get_user_data(chat_id)
     return user_data.get('bot_status', "stopped")
 
-def get_settings_keyboard(chat_id: int):
+def get_user_language(update: Update, user_data: dict) -> str:
+    # Приоритет: язык из Redis (WebApp) → language_code → английский
+    lang = user_data.get('language', update.effective_user.language_code[:2])
+    logger.info(f"Selected language for chat_id={update.effective_chat.id}: {lang}")
+    return lang if lang in ['ru', 'en'] else 'en'
+
+
+def get_settings_keyboard(chat_id: int, lang: str):
     status = get_bot_status(chat_id)
-    status_btn = "🟢 Стоп" if status == "running" else "🔴 Старт"
+    status_btn = translations['stop_button'][lang] if status == "running" else translations['start_button'][lang]
     return ReplyKeyboardMarkup([
-        [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realfind.netlify.app"}), KeyboardButton(status_btn)],
-        [KeyboardButton("🎁 Бесплатно"), KeyboardButton("💬 Поддержка", web_app={"url": "https://realfind.netlify.app/support"})] 
+        [KeyboardButton(translations['settings_button'][lang], web_app={"url": "https://realfind.netlify.app"}), KeyboardButton(status_btn)],
+        [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": "https://realfind.netlify.app/support"})] 
     ], resize_keyboard=True)
 
-async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str):
+async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str, lang: str):
     async def send():
-        return await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_settings_keyboard(chat_id))
+        return await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_settings_keyboard(chat_id, lang))
     await retry_on_timeout(send, chat_id=chat_id, message_text=text)
 
 async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cm = update.my_chat_member
-    if cm.chat.type == "private" and cm.old_chat_member.status == "kicked" and cm.new_chat_member.status == "member":
-        welcome_text = "Добро пожаловать! Настройте фильтры и нажмите 🔴 Старт"
+    if cm.chat.type == "private" and cm.new_chat_member.status == "member":
+        user_data = get_user_data(cm.chat.id)
+        lang = get_user_language(update, user_data)
+        welcome_text = translations['welcome'][lang]
         async def send_welcome():
-            return await context.bot.send_message(chat_id=cm.chat.id, text=welcome_text, reply_markup=get_settings_keyboard(cm.chat.id))
+            return await context.bot.send_message(chat_id=cm.chat.id, text=welcome_text, reply_markup=get_settings_keyboard(cm.chat.id, lang))
         await retry_on_timeout(send_welcome, chat_id=cm.chat.id, message_text=welcome_text)
 
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
-    text = update.message.text  # Извлекаем текст из сообщения
+    text = update.message.text
+    user_data = get_user_data(chat_id)
+    lang = get_user_language(update, user_data)
 
-    if text == "🔴 Старт":
+    if text in [translations['start_button']['ru'], translations['start_button']['en']]:
         if is_subscription_active(chat_id):
             save_bot_status(chat_id, "running")
-            start_text = "🔍 Мониторинг активирован! Ждём свежих объявлений."
-            async def send_start():
-                return await context.bot.send_message(chat_id=chat_id, text=start_text, reply_markup=get_settings_keyboard(chat_id))
-            await retry_on_timeout(send_start, chat_id=chat_id, message_text=start_text)
+            await context.application.subscription_manager.refresh_subscriptions(source="all")
+            logger.info(f"🔄 Cache refreshed after start for chat_id={chat_id}")
+            start_text = translations['start'][lang]
+            await send_status_message(chat_id, context, start_text, lang)
         else:
-            invoice_text = "Для активации мониторинга оформите подписку."
+            invoice_text = translations['invoice'][lang]
             async def send_invoice():
                 return await context.bot.send_invoice(
                     chat_id=chat_id,
-                    title="Доступ к объявлениям",
-                    description="Подписка на 30 дней",
+                    title=translations['invoice_title'][lang],
+                    description=translations['invoice_description'][lang],
                     payload=f"toggle_bot_status:{chat_id}:stopped",
                     provider_token="",
                     currency="XTR",
-                    prices=[{"label": "Стоимость", "amount": 2500}],
+                    prices=[{"label": translations['invoice_label'][lang], "amount": 2500}],
                     start_parameter="toggle-bot-status"
                 )
             await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=invoice_text)
-    elif text == "🟢 Стоп":
+    elif text in [translations['stop_button']['ru'], translations['stop_button']['en']]:
         save_bot_status(chat_id, "stopped")
-        stop_text = "Подписка истекла 🔴" if not is_subscription_active(chat_id) else "Мониторинг приостановлен 🛑."
-        async def send_stop():
-            return await context.bot.send_message(chat_id=chat_id, text=stop_text, reply_markup=get_settings_keyboard(chat_id))
-        await retry_on_timeout(send_stop, chat_id=chat_id, message_text=stop_text)
-    elif text == "🎁 Бесплатно":
-            # Сначала проверяем, активна ли уже подписка
-            if is_subscription_active(chat_id):
-                trial_active_text = "У вас уже есть активная подписка! Бесплатный период можно активировать только после её окончания."
-                async def send_trial_active():
-                    return await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=trial_active_text
-                    )
-                await retry_on_timeout(send_trial_active, chat_id=chat_id, message_text=trial_active_text)
-                return
-            if redis_client.get(f"trial_used:{chat_id}") == "true":
-                trial_used_text = "Вы уже использовали бесплатные 2 дня!"
-                async def send_trial_used():
-                    return await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=trial_used_text
-                    )
-                await retry_on_timeout(send_trial_used, chat_id=chat_id, message_text=trial_used_text)
-                async def send_invoice():
-                    return await context.bot.send_invoice(
-                        chat_id=chat_id,
-                        title="Доступ к объявлениям",
-                        description="Подписка на 30 дней",
-                        payload=f"toggle_bot_status:{chat_id}:stopped",
-                        provider_token="",
-                        currency="XTR",
-                        prices=[{"label": "Стоимость", "amount": 2500}],
-                        start_parameter="toggle-bot-status"
-                    )
-                await retry_on_timeout(send_invoice, chat_id=chat_id, message_text="Для активации мониторинга оформите подписку.")
-                return
-            # Назначаем бесплатный период
-            redis_client.set(f"trial_used:{chat_id}", "true")
-            trial_end = datetime.now(timezone.utc) + timedelta(seconds=TRIAL_TTL)
-            save_bot_status(chat_id, "stopped", custom_sub_end=trial_end)
-            trial_text = "Вам предоставлены 2 дня бесплатного доступа! Подписка активирована 🟢"
-            async def send_trial():
-                return await context.bot.send_message(
+        await context.application.subscription_manager.refresh_subscriptions(source="all")
+        logger.info(f"🔄 Cache refreshed after stop for chat_id={chat_id}")
+        stop_text = translations['stop_expired'][lang] if not is_subscription_active(chat_id) else translations['stop'][lang]
+        await send_status_message(chat_id, context, stop_text, lang)
+    elif text in [translations['free_button']['ru'], translations['free_button']['en']]:
+        if is_subscription_active(chat_id):
+            trial_active_text = translations['trial_active'][lang]
+            async def send_trial_active():
+                return await context.bot.send_message(chat_id=chat_id, text=trial_active_text)
+            await retry_on_timeout(send_trial_active, chat_id=chat_id, message_text=trial_active_text)
+            return
+        if redis_client.get(f"trial_used:{chat_id}") == "true":
+            trial_used_text = translations['trial_used'][lang]
+            async def send_trial_used():
+                return await context.bot.send_message(chat_id=chat_id, text=trial_used_text)
+            await retry_on_timeout(send_trial_used, chat_id=chat_id, message_text=trial_used_text)
+            async def send_invoice():
+                return await context.bot.send_invoice(
                     chat_id=chat_id,
-                    text=trial_text
+                    title=translations['invoice_title'][lang],
+                    description=translations['invoice_description'][lang],
+                    payload=f"toggle_bot_status:{chat_id}:stopped",
+                    provider_token="",
+                    currency="XTR",
+                    prices=[{"label": translations['invoice_label'][lang], "amount": 2500}],
+                    start_parameter="toggle-bot-status"
                 )
-            await retry_on_timeout(send_trial, chat_id=chat_id, message_text=trial_text)
+            await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=translations['invoice'][lang])
+            return
+        redis_client.set(f"trial_used:{chat_id}", "true")
+        trial_end = datetime.now(timezone.utc) + timedelta(seconds=TRIAL_TTL)
+        save_bot_status(chat_id, "stopped", custom_sub_end=trial_end)
+        trial_text = translations['trial'][lang]
+        async def send_trial():
+            return await context.bot.send_message(chat_id=chat_id, text=trial_text)
+        await retry_on_timeout(send_trial, chat_id=chat_id, message_text=trial_text)
 
 async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -166,30 +167,23 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if chat_id != int(payload_chat_id):
         return
 
-    # Получаем текущую дату окончания подписки, если есть
     user_data = get_user_data(chat_id)
+    lang = get_user_language(update, user_data)
     now = datetime.now(timezone.utc)
-
     current_end_ts = int(user_data.get("subscription_end", "0"))
     current_end = datetime.fromtimestamp(current_end_ts, tz=timezone.utc)
 
-    # Если подписка уже активна — продлеваем от конца, иначе — от текущего момента
     if current_end > now:
         new_end = current_end + timedelta(days=30)
     else:
         new_end = now + timedelta(days=30)
 
-    # Обновляем статус и срок подписки централизованно
     save_bot_status(chat_id, new_status, custom_sub_end=new_end)
-
-    # Форматируем дату
-    formatted_date = new_end.strftime("%d-%m-%Y %H:%M")
-    payment_text = f"Подписка продлена! 🟢\nНовая дата окончания: {formatted_date}"
-    async def send_payment():
-        return await context.bot.send_message(chat_id=chat_id, text=payment_text, reply_markup=get_settings_keyboard(chat_id))
-    await retry_on_timeout(send_payment, chat_id=chat_id, message_text=payment_text) 
+    formatted_date = new_end.strftime("%d-%m-%Y %H:%M" if lang == "ru" else "%Y-%m-%d %H:%M")
+    payment_text = translations['payment'][lang].format(date=formatted_date)
+    await send_status_message(chat_id, context, payment_text, lang)
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async def send_pre_checkout():
         return await context.bot.answer_pre_checkout_query(update.pre_checkout_query.id, ok=True)
-    await retry_on_timeout(send_pre_checkout, chat_id=update.pre_checkout_query.from_user.id, message_text="Pre-checkout confirmation")                      
+    await retry_on_timeout(send_pre_checkout, chat_id=update.pre_checkout_query.from_user.id, message_text="Pre-checkout confirmation")
