@@ -9,6 +9,7 @@ from utils.redis_client import redis_client
 from utils.telegram_utils import retry_on_timeout
 from utils.translations import translations
 
+
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 
 

@@ -1,16 +1,17 @@
 import os
 from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
-from telegram.ext import Application, ContextTypes, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
+from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler, CommandHandler
 import orjson  # Для JSON parse (как в webhook.py)
 import asyncio
 from datetime import datetime, timezone
-from authorization.subscription import save_user_data, send_status_message, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers из subscription (без handle_user_message)
+from authorization.subscription import save_user_data, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers из subscription (без handle_user_message)
 from authorization.webhook import webhook_update, format_filters_response  # Импорт webhook_update и format
-from authorization.support import handle_user_message  # Отдельный импорт для handle_user_message
+from authorization.support import handle_support_text  # Отдельный импорт для handle_user_message
 from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
 from config import TELEGRAM_TOKEN
+from config import WEBHOOK_URL, SUPPORT_CHAT_ID
 
 app = FastAPI(
     docs_url=None,
@@ -29,12 +30,16 @@ async def init_application():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     await application.initialize()  # Обязательно для v21+: инициализирует bot и internals
     # Add handlers from bot.py (как в startup, но здесь)
+    app.add_handler(MessageHandler(
+        filters.Chat(SUPPORT_CHAT_ID) & filters.TEXT & ~filters.COMMAND,
+        handle_support_text
+    ))
+
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
     application.add_handler(ChatMemberHandler(welcome_new_user, ChatMemberHandler.MY_CHAT_MEMBER))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     application.add_handler(PreCheckoutQueryHandler(pre_checkout))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     logger.info("Bot application initialized on cold start")
 
 @app.post("/webhook")  # POST от Netlify (web_app_data)
