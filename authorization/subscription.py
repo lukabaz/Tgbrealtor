@@ -91,7 +91,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🔴 Старт":
         if is_subscription_active(chat_id):
             save_bot_status(chat_id, "running")
-            start_text = "🔍 Мониторинг активирован! Ждём свежих ликвидаций."
+            start_text = "🔍 Мониторинг активирован! Ждём свежих объявлений."
             async def send_start():
                 return await context.bot.send_message(chat_id=chat_id, text=start_text, reply_markup=get_settings_keyboard(chat_id))
             await retry_on_timeout(send_start, chat_id=chat_id, message_text=start_text)
