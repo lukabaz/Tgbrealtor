@@ -67,8 +67,8 @@ def get_settings_keyboard(chat_id: int):
     status = get_bot_status(chat_id)
     status_btn = "🟢 Стоп" if status == "running" else "🔴 Старт"
     return ReplyKeyboardMarkup([
-        [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realestatege.netlify.app"}), KeyboardButton(status_btn)],
-        [KeyboardButton("🎁 Бесплатно"), KeyboardButton("💬 Поддержка", web_app={"url": "https://realestatege.netlify.app/support"})] 
+        [KeyboardButton("⚙️ Настройки", web_app={"url": "https://realfind.netlify.app"}), KeyboardButton(status_btn)],
+        [KeyboardButton("🎁 Бесплатно"), KeyboardButton("💬 Поддержка", web_app={"url": "https://realfind.netlify.app/support"})] 
     ], resize_keyboard=True)
 
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str):
