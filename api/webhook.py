@@ -6,7 +6,7 @@ from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryH
 import orjson  # Для JSON parse (как в webhook.py)
 from datetime import datetime, timezone
 from authorization.subscription import save_user_data, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers из subscription (без handle_user_message)
-from authorization.webhook import webhook_update, format_filters_response  # Импорт webhook_update и format
+from authorization.webhook import webhook_update  # , format_filters_response Импорт webhook_update и format
 from authorization.support import handle_support_text  # Отдельный импорт для handle_user_message
 from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
@@ -57,7 +57,7 @@ async def netlify_webhook(request: Request):
             logger.info("💾 Saving filters_timestamp as: %s (UTC)", utc_timestamp)
             save_user_data(chat_id, {"filters_timestamp": str(utc_timestamp)})
             # Send confirmation (from webhook.py)
-            message = format_filters_response(data)
+            #message = format_filters_response(data) убрал потому что from authorization.webhook import webhook_update  # , format_filters_response 
             async def send_confirmation():
                 await application.bot.send_message(chat_id=chat_id, text=message)
             await retry_on_timeout(send_confirmation, chat_id=chat_id, message_text="Фильтры сохранены!")

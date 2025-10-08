@@ -12,54 +12,53 @@ from utils.translations import translations
 
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 
-def format_settings_response(data: dict, language: str = "ru") -> str:
-    """Форматирует ответ с настройками фильтров недвижимости для пользователя."""
+#def format_filters_response(data: dict, language: str = "ru") -> str:
+#    """Форматирует ответ с настройками фильтров недвижимости для пользователя."""
     # Маппинг значений
-    city_map = {
-        "1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"
-    }
-    deal_type_map = {
-        "rent": "Аренда", "sale": "Продажа"
-    }
+    #city_map = {
+     #   "1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"
+    #}
+    #deal_type_map = {
+    #    "2": "Аренда", "1": "Продажа"
+    #}
 
-    city = city_map.get(data.get("city"), "Не выбран")
-    deal_type = deal_type_map.get(data.get("deal_type"), "Не указан")
-    price_from = data.get("price_from") or "Не указано"
-    price_to = data.get("price_to") or "Не указано"
-    floor_from = data.get("floor_from") or "Не указано"
-    floor_to = data.get("floor_to") or "Не указано"
-    rooms_from = data.get("rooms_from") or "Не указано"
-    rooms_to = data.get("rooms_to") or "Не указано"
-    bedrooms_from = data.get("bedrooms_from") or "Не указано"
-    bedrooms_to = data.get("bedrooms_to") or "Не указано"
-    own_ads = "Да" if data.get("own_ads") == "1" else "Нет"
-    url = data.get("url", "URL не найден")
+    #city = city_map.get(data.get("city"), "Не выбран")
+    #deal_type = deal_type_map.get(data.get("deal_type"), "Не указан")
+    #price_from = data.get("price_from") or "Не указано"
+    #price_to = data.get("price_to") or "Не указано"
+    #floor_from = data.get("floor_from") or "Не указано"
+    #floor_to = data.get("floor_to") or "Не указано"
+    #rooms_from = data.get("rooms_from") or "Не указано"
+    #rooms_to = data.get("rooms_to") or "Не указано"
+    #bedrooms_from = data.get("bedrooms_from") or "Не указано"
+    #bedrooms_to = data.get("bedrooms_to") or "Не указано"
+    #own_ads = "Да" if data.get("own_ads") == "1" else "Нет"
 
-    if language == "en":
-        city_map_en = {"1": "Tbilisi", "2": "Batumi", "3": "Kutaisi"}
-        deal_type_map_en = {"rent": "Rent", "sale": "Sale"}
-        return (
-            f"✅ Filters saved!\n"
-            f"City: {city_map_en.get(data.get('city'), 'Not selected')}\n"
-            f"Deal type: {deal_type_map_en.get(data.get('deal_type'), 'Not set')}\n"
-            f"Price: ${price_from} - ${price_to}\n"
-            f"Floor: {floor_from} - {floor_to}\n"
-            f"Rooms: {rooms_from} - {rooms_to}\n"
-            f"Bedrooms: {bedrooms_from} - {bedrooms_to}\n"
-            f"Only from owners: {'Yes' if own_ads == 'Да' else 'No'}\n"
-            f"🔗 [View on MyHome]({url})"
-        )
+    #if language == "en":
+    #    city_map_en = {"1": "Tbilisi", "2": "Batumi", "3": "Kutaisi"}
+    #    deal_type_map_en = {"2": "Rent", "1": "Sale"}
+        #return (
+        #    f"✅ Filters saved!\n"
+        #    f"City: {city_map_en.get(data.get('city'), 'Not selected')}\n"
+        #    f"Deal type: {deal_type_map_en.get(data.get('deal_type'), 'Not set')}\n"
+        #    f"Price: ${price_from} - ${price_to}\n"
+        #    f"Floor: {floor_from} - {floor_to}\n"
+        #    f"Rooms: {rooms_from} - {rooms_to}\n"
+        #    f"Bedrooms: {bedrooms_from} - {bedrooms_to}\n"
+        #    f"Only from owners: {'Yes' if own_ads == 'Да' else 'No'}\n"
+        #)
+    
 
-    return (
-        f"✅ Фильтры сохранены!\n"
-        f"Город: {city}\n"
-        f"Тип сделки: {deal_type}\n"
-        f"Цена: {price_from}$ - {price_to}$\n"
-        f"Этаж: {floor_from} - {floor_to}\n"
-        f"Комнат: {rooms_from} - {rooms_to}\n"
-        f"Спален: {bedrooms_from} - {bedrooms_to}\n"
-        f"Только от владельцев: {own_ads}\n"
-    )
+    #return (
+    #    f"✅ Фильтры сохранены!\n"
+    #    f"Город: {city}\n"
+    #    f"Тип сделки: {deal_type}\n"
+    #    f"Цена: {price_from}$ - {price_to}$\n"
+    #    f"Этаж: {floor_from} - {floor_to}\n"
+    #    f"Комнат: {rooms_from} - {rooms_to}\n"
+    #    f"Спален: {bedrooms_from} - {bedrooms_to}\n"
+    #    f"Только от владельцев: {own_ads}\n"
+    #)
 
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.web_app_data:
@@ -171,20 +170,19 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             city = city_map.get(settings.get("city"), "Не выбран" if lang == "ru" else "Not selected")
             deal_type = deal_type_map.get(settings.get("deal_type"), "Не указан" if lang == "ru" else "Not set")
 
-
             response_text = translations['settings_saved'][lang].format(
-            city=city,    
-            districts=', '.join(settings.get("districts", {}).values()) or ("Не выбраны" if lang == "ru" else "Not selected"),
-            deal_type=deal_type,
-            price_from=settings.get("price_from") or ("Не указано" if lang == "ru" else "Not specified"),
-            price_to=settings.get("price_to") or ("Не указано" if lang == "ru" else "Not specified"),
-            floor_from=settings.get("floor_from") or ("Не указано" if lang == "ru" else "Not specified"),
-            floor_to=settings.get("floor_to") or ("Не указано" if lang == "ru" else "Not specified"),
-            rooms_from=settings.get("rooms_from") or ("Не указано" if lang == "ru" else "Not specified"),
-            rooms_to=settings.get("rooms_to") or ("Не указано" if lang == "ru" else "Not specified"),
-            bedrooms_from=settings.get("bedrooms_from") or ("Не указано" if lang == "ru" else "Not specified"),
-            bedrooms_to=settings.get("bedrooms_to") or ("Не указано" if lang == "ru" else "Not specified"),
-            own_ads="Да" if settings.get("own_ads") == "1" and lang == "ru" else "Yes" if settings.get("own_ads") == "1" else ("Нет" if lang == "ru" else "No")
+            city = city,    
+            districts = ', '.join(settings.get("districts", {}).values()) or ("Не выбраны" if lang == "ru" else "Not selected"),
+            deal_type = deal_type,
+            price_from = settings.get("price_from") or ("Не указано" if lang == "ru" else "Not specified"),
+            price_to = settings.get("price_to") or ("Не указано" if lang == "ru" else "Not specified"),
+            floor_from = settings.get("floor_from") or ("Не указано" if lang == "ru" else "Not specified"),
+            floor_to = settings.get("floor_to") or ("Не указано" if lang == "ru" else "Not specified"),
+            rooms_from = settings.get("rooms_from") or ("Не указано" if lang == "ru" else "Not specified"),
+            rooms_to = settings.get("rooms_to") or ("Не указано" if lang == "ru" else "Not specified"),
+            bedrooms_from = settings.get("bedrooms_from") or ("Не указано" if lang == "ru" else "Not specified"),
+            bedrooms_to = settings.get("bedrooms_to") or ("Не указано" if lang == "ru" else "Not specified"),
+            own_ads = ("Да" if settings.get("own_ads") == "1" else "Нет") if lang == "ru" else ("Yes" if settings.get("own_ads") == "1" else "No")
             )
             async def send_confirmation():
                 return await context.bot.send_message(chat_id=user_id, text=response_text)
