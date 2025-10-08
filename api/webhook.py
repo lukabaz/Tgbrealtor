@@ -3,7 +3,6 @@ from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler, CommandHandler
 import orjson  # Для JSON parse (как в webhook.py)
-import asyncio
 from datetime import datetime, timezone
 from authorization.subscription import save_user_data, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers из subscription (без handle_user_message)
 from authorization.webhook import webhook_update, format_filters_response  # Импорт webhook_update и format
@@ -11,7 +10,7 @@ from authorization.support import handle_support_text  # Отдельный им
 from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
 from config import TELEGRAM_TOKEN
-from config import WEBHOOK_URL, SUPPORT_CHAT_ID
+from config import SUPPORT_CHAT_ID
 
 app = FastAPI(
     docs_url=None,
@@ -30,7 +29,7 @@ async def init_application():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     await application.initialize()  # Обязательно для v21+: инициализирует bot и internals
     # Add handlers from bot.py (как в startup, но здесь)
-    app.add_handler(MessageHandler(
+    application.add_handler(MessageHandler(
         filters.Chat(SUPPORT_CHAT_ID) & filters.TEXT & ~filters.COMMAND,
         handle_support_text
     ))

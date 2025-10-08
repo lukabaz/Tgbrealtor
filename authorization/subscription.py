@@ -14,7 +14,7 @@ TRIAL_TTL = 2 * 24 * 60 * 60  # 48 часов
 
 def save_user_data(chat_id: int, data: dict):
     redis_client.hset(f"user:{chat_id}", mapping=data)
-    redis_client.expire(f"user:{chat_id}", INACTIVITY_TTL) # перенести в вебхук
+    #redis_client.expire(f"user:{chat_id}", INACTIVITY_TTL) # перенесли в вебхук
 
 def get_user_data(chat_id: int):
     return redis_client.hgetall(f"user:{chat_id}")
@@ -103,8 +103,9 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in [translations['start_button']['ru'], translations['start_button']['en']]:
         if is_subscription_active(chat_id):
             save_bot_status(chat_id, "running")
-            await context.application.subscription_manager.refresh_subscriptions(source="all")
-            logger.info(f"🔄 Cache refreshed after start for chat_id={chat_id}")
+            #await context.application.subscription_manager.refresh_subscriptions(source="all")
+            logger.info(f"🔄 Skipped cache refresh for chat_id={chat_id} (subscription_manager not verified)") # 08.10
+            #logger.info(f"🔄 Cache refreshed after start for chat_id={chat_id}") 
             start_text = translations['start'][lang]
             await send_status_message(chat_id, context, start_text, lang)
         else:
@@ -123,8 +124,9 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=invoice_text)
     elif text in [translations['stop_button']['ru'], translations['stop_button']['en']]:
         save_bot_status(chat_id, "stopped")
-        await context.application.subscription_manager.refresh_subscriptions(source="all")
-        logger.info(f"🔄 Cache refreshed after stop for chat_id={chat_id}")
+        #await context.application.subscription_manager.refresh_subscriptions(source="all")
+        logger.info(f"🔄 Skipped cache refresh for chat_id={chat_id} (subscription_manager not verified)") # 08.10
+        #logger.info(f"🔄 Cache refreshed after stop for chat_id={chat_id}")
         stop_text = translations['stop_expired'][lang] if not is_subscription_active(chat_id) else translations['stop'][lang]
         await send_status_message(chat_id, context, stop_text, lang)
     elif text in [translations['free_button']['ru'], translations['free_button']['en']]:

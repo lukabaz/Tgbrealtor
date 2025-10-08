@@ -69,30 +69,30 @@ translations = {
         "en": "Cost"
     },
     # Сообщения из webhook.py
-    #"settings_saved": {
-    #   "ru": "✅ Настройки сохранены!\nБиржа: {exchange}\nВалютные пары: {symbols}\nПорог ликвидации: {threshold}$",
-    #   "en": "✅ Settings saved!\nExchange: {exchange}\nCurrency pairs: {symbols}\nLiquidation threshold: ${threshold}"
-    #},
-    #"support_sent": {
-     #   "ru": "✅ Ваше сообщение отправлено в поддержку. Мы ответим скоро!",
-      #  "en": "✅ Your message has been sent to support. We will respond soon!"
-   # },
-    #"support_empty": {
-     #   "ru": "❌ Ошибка: пустое сообщение. Попробуйте ещё раз.",
-      #  "en": "❌ Error: empty message. Please try again."
-   # },
-    #"invalid_data": {
-     #   "ru": "⚠️ Ошибка: Неверный формат данных WebApp",
-      #  "en": "⚠️ Error: Invalid WebApp data format"
-    #},
-    #"unknown_type": {
-     #   "ru": "❌ Неизвестный тип данных. Обратитесь в поддержку.",
-      #  "en": "❌ Unknown data type. Contact support."
-    #},
-    #"processing_error": {
-     #   "ru": "❌ Произошла ошибка при обработке запроса. Попробуйте снова.",
-      #  "en": "❌ An error occurred while processing the request. Try again."
-    #},
+    "settings_saved": {
+        "ru": "✅ Настройки сохранены!\nГород: {city}\nРайоны: {districts}\nТип сделки: {deal_type}\nЦена: {price_from}-{price_to}$\nЭтаж: {floor_from}-{floor_to}\nКомнат: {rooms_from}-{rooms_to}\nСпален: {bedrooms_from}-{bedrooms_to}\nТолько собственник: {own_ads}",
+        "en": "✅ Settings saved!\nCity: {city}\nDistricts: {districts}\nDeal type: {deal_type}\nPrice: {price_from}-{price_to}$\nFloor: {floor_from}-{floor_to}\nRooms: {rooms_from}-{rooms_to}\nBedrooms: {bedrooms_from}-{bedrooms_to}\nOwner only: {own_ads}"
+    },
+    "support_sent": {
+        "ru": "✅ Ваше сообщение отправлено в поддержку. Мы ответим скоро!",
+        "en": "✅ Your message has been sent to support. We will respond soon!"
+    },
+    "support_empty": {
+        "ru": "❌ Ошибка: пустое сообщение. Попробуйте ещё раз.",
+        "en": "❌ Error: empty message. Please try again."
+    },
+    "invalid_data": {
+        "ru": "⚠️ Ошибка: Неверный формат данных WebApp",
+        "en": "⚠️ Error: Invalid WebApp data format"
+    },
+    "unknown_type": {
+        "ru": "❌ Неизвестный тип данных. Обратитесь в поддержку.",
+        "en": "❌ Unknown data type. Contact support."
+    },
+    "processing_error": {
+        "ru": "❌ Произошла ошибка при обработке запроса. Попробуйте снова.",
+        "en": "❌ An error occurred while processing the request. Try again."
+    },
 
     
 
