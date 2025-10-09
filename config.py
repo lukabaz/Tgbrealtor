@@ -1,7 +1,7 @@
 import os
 # from dotenv import load_dotenv
 # load_dotenv()
-SUPPORT_CHAT_ID = -1002578639096
+SUPPORT_CHAT_ID = -1002977168139
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 REDIS_URL = os.getenv("REDIS_URL")
 WEBHOOK_URL = f"https://{os.getenv('VERCEL_URL', 'localhost:3000')}/{TELEGRAM_TOKEN}"  # Vercel auto VERCEL_URL, fallback for local
