@@ -1,5 +1,6 @@
 # api/webhook
 import os
+import asyncio
 from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler, CommandHandler
@@ -84,6 +85,14 @@ async def telegram_webhook(request: Request):
         body = await request.body()
         update_json = orjson.loads(body)
         update = Update.de_json(update_json, application.bot)  # Теперь bot готов
+
+        # Создаём новый цикл событий, если старый закрыт
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        # Обрабатываем обновление в текущем цикле
         await application.process_update(update)
         return {"ok": True}
     except Exception as e:
