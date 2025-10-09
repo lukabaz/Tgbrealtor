@@ -76,7 +76,7 @@ def get_settings_keyboard(chat_id: int, lang: str):
     status_btn = translations['stop_button'][lang] if status == "running" else translations['start_button'][lang]
     return ReplyKeyboardMarkup([
         [KeyboardButton(translations['settings_button'][lang], web_app={"url": "https://realfind.netlify.app/#/settings"}), KeyboardButton(status_btn)],
-        [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": "https://realfind.netlify.app/support/#/support"})] 
+        [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": "https://realfind.netlify.app/#/support"})] 
     ], resize_keyboard=True)
 
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str, lang: str):
