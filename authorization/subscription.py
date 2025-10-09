@@ -10,11 +10,9 @@ from utils.translations import translations  # Импортируем перев
 
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 TRIAL_TTL = 2 * 24 * 60 * 60  # 48 часов
-#ACTIVE_SUBSCRIPTION_MESSAGE = "Подписка активирована 🟢"
 
 def save_user_data(chat_id: int, data: dict):
     redis_client.hset(f"user:{chat_id}", mapping=data)
-    #redis_client.expire(f"user:{chat_id}", INACTIVITY_TTL) # перенесли в вебхук
 
 def get_user_data(chat_id: int):
     return redis_client.hgetall(f"user:{chat_id}")
