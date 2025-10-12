@@ -43,39 +43,6 @@ async def init_application():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     logger.info("Bot application initialized on cold start")
 
-@app.post("/webhook")  # POST от Netlify (web_app_data)
-async def netlify_webhook(request: Request):
-    global application
-    if application is None:
-        await init_application()  # Lazy init перед использованием bot
-    try:
-        body = await request.body()
-        data = orjson.loads(body)  # Как в webhook.py
-        chat_id = data.get('chat_id')  # From Netlify payload
-        if 'url' in data:
-            save_user_data(chat_id, {"filters_url": data["url"]})
-            utc_timestamp = int(datetime.now(timezone.utc).timestamp())
-            logger.info("💾 Saving filters_timestamp as: %s (UTC)", utc_timestamp)
-            save_user_data(chat_id, {"filters_timestamp": str(utc_timestamp)})
-            # Send confirmation (from webhook.py)
-            #message = format_filters_response(data) убрал потому что from authorization.webhook import webhook_update  # , format_filters_response 
-            async def send_confirmation():
-                await application.bot.send_message(chat_id=chat_id, text=message)
-            await retry_on_timeout(send_confirmation, chat_id=chat_id, message_text="Фильтры сохранены!")
-            return {"status": "filters saved"}
-        elif 'supportMessage' in data:
-            message = data["supportMessage"]
-            async def send_support():
-                await application.bot.send_message('6770986953', f"📩 Поддержка от {chat_id}:\n{message}")
-                await application.bot.send_message(chat_id, "✅ Ваше сообщение отправлено в поддержку.")
-            await retry_on_timeout(send_support, chat_id=chat_id, message_text="Support sent!")
-            return {"status": "support sent"}
-        else:
-            return {"status": "ok", "error": "No url or supportMessage"}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/telegram-webhook")
 async def telegram_webhook(request: Request):
     global application
