@@ -76,29 +76,30 @@ async def netlify_webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/telegram-webhook")  # POST от Telegram (updates).
+@app.post("/telegram-webhook")
 async def telegram_webhook(request: Request):
     global application
+
+    # 🔄 Проверка: не остался ли закрытый event loop
+    loop = asyncio.get_event_loop()
+    if loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        application = None  # 💡 Заставим пересоздать Application с новым loop
+
+    # ⚙️ Lazy init Application (пересоздастся, если было None)
     if application is None:
-        await init_application()  # Lazy init перед process_update
+        await init_application()
+
     try:
         body = await request.body()
         update_json = orjson.loads(body)
-        update = Update.de_json(update_json, application.bot)  # Теперь bot готов
-
-        # Создаём новый цикл событий, если старый закрыт
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        # Обрабатываем обновление в текущем цикле
+        update = Update.de_json(update_json, application.bot)
         await application.process_update(update)
         return {"ok": True}
     except Exception as e:
         logger.error(f"Telegram webhook error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
