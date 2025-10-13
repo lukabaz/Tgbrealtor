@@ -4,7 +4,7 @@ import time
 from telegram import Update
 from telegram.ext import ContextTypes
 from config import SUPPORT_CHAT_ID
-from authorization.subscription import save_user_data, send_status_message # get_user_data, get_user_language возможно нужен
+from authorization.subscription import save_user_data, send_status_message
 from utils.logger import logger
 from utils.redis_client import redis_client
 from utils.telegram_utils import retry_on_timeout
@@ -12,119 +12,97 @@ from utils.translations import translations
 
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 
-#def format_filters_response(data: dict, language: str = "ru") -> str:
-#    """Форматирует ответ с настройками фильтров недвижимости для пользователя."""
-    # Маппинг значений
-    #city_map = {
-     #   "1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"
-    #}
-    #deal_type_map = {
-    #    "2": "Аренда", "1": "Продажа"
-    #}
+def build_myhome_url(settings: dict) -> str:
+    city_id = settings["city"]
+    deal_type = settings["deal_type"]
+    price_from = settings["price_from"]
+    price_to = settings["price_to"]
+    floor_from = settings["floor_from"]
+    floor_to = settings["floor_to"]
+    rooms = ",".join(str(i) for i in range(int(settings["rooms_from"]), int(settings["rooms_to"]) + 1))
+    bedrooms = ",".join(str(i) for i in range(int(settings["bedrooms_from"]), int(settings["bedrooms_to"]) + 1))
+    own_ads = "physical" if settings["own_ads"] == "1" else "all"
 
-    #city = city_map.get(data.get("city"), "Не выбран")
-    #deal_type = deal_type_map.get(data.get("deal_type"), "Не указан")
-    #price_from = data.get("price_from") or "Не указано"
-    #price_to = data.get("price_to") or "Не указано"
-    #floor_from = data.get("floor_from") or "Не указано"
-    #floor_to = data.get("floor_to") or "Не указано"
-    #rooms_from = data.get("rooms_from") or "Не указано"
-    #rooms_to = data.get("rooms_to") or "Не указано"
-    #bedrooms_from = data.get("bedrooms_from") or "Не указано"
-    #bedrooms_to = data.get("bedrooms_to") or "Не указано"
-    #own_ads = "Да" if data.get("own_ads") == "1" else "Нет"
+    # District and urban mapping
+    city_map = {
+        "1": {"id": 1, "slug": "Tbilisi", "districts": {}, "urbans": []},
+        "2": {"id": 15, "slug": "Batumi", "districts": {"Rustaveli": 8, "Agmashenebeli": 10, "Bagrationi": 9}, "urbans": [72, 74, 73]},
+        "3": {"id": 2, "slug": "Kutaisi", "districts": {}, "urbans": []}
+    }
 
-    #if language == "en":
-    #    city_map_en = {"1": "Tbilisi", "2": "Batumi", "3": "Kutaisi"}
-    #    deal_type_map_en = {"2": "Rent", "1": "Sale"}
-        #return (
-        #    f"✅ Filters saved!\n"
-        #    f"City: {city_map_en.get(data.get('city'), 'Not selected')}\n"
-        #    f"Deal type: {deal_type_map_en.get(data.get('deal_type'), 'Not set')}\n"
-        #    f"Price: ${price_from} - ${price_to}\n"
-        #    f"Floor: {floor_from} - {floor_to}\n"
-        #    f"Rooms: {rooms_from} - {rooms_to}\n"
-        #    f"Bedrooms: {bedrooms_from} - {bedrooms_to}\n"
-        #    f"Only from owners: {'Yes' if own_ads == 'Да' else 'No'}\n"
-        #)
-    
+    city_info = city_map.get(city_id)
+    if not city_info:
+        return ""
 
-    #return (
-    #    f"✅ Фильтры сохранены!\n"
-    #    f"Город: {city}\n"
-    #    f"Тип сделки: {deal_type}\n"
-    #    f"Цена: {price_from}$ - {price_to}$\n"
-    #    f"Этаж: {floor_from} - {floor_to}\n"
-    #    f"Комнат: {rooms_from} - {rooms_to}\n"
-    #    f"Спален: {bedrooms_from} - {bedrooms_to}\n"
-    #    f"Только от владельцев: {own_ads}\n"
-    #)
+    # Convert selected district names to their IDs
+    selected_districts = settings.get("districts", {}).get(city_info["slug"].lower(), [])
+    district_ids = [str(city_info["districts"][d]) for d in selected_districts if d in city_info["districts"]]
+    urbans = ",".join(str(u) for u in city_info["urbans"])
+
+    base_url = f"https://www.myhome.ge/ru/s/qiravdeba-bina-{city_info['slug']}shi"
+    params = [
+        f"CardView=1",
+        f"real_estate_types=1",
+        f"with_picture=1",
+        f"currency_id=2",
+        f"order_by=date",
+        f"sequence=desc",
+        f"cities={city_info['id']}",
+        f"deal_types={deal_type}",
+        f"price_from={price_from}",
+        f"price_to={price_to}",
+        f"floor_from={floor_from}",
+        f"floor_to={floor_to}",
+        f"room_types={rooms}",
+        f"bedroom_types={bedrooms}",
+        f"owner_type={own_ads}",
+        f"page=1"
+    ]
+    if district_ids:
+        params.append(f"districts={','.join(district_ids)}")
+    if urbans:
+        params.append(f"urbans={urbans}")
+
+    return f"{base_url}?{'&'.join(params)}"
 
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.web_app_data:
-        return  # Not a WebApp message
+        return
 
     user_id = update.effective_user.id
     try:
         payload = orjson.loads(update.message.web_app_data.data)
         logger.debug(f"📩 Received Web App data for user_id={user_id}: {payload}")
 
-        # Получаем язык пользователя
         user_data = redis_client.hgetall(f"user:{user_id}")
         lang = user_data.get("language", update.effective_user.language_code[:2])
         lang = lang if lang in ['ru', 'en'] else 'en'
-        logger.info(f"Selected language for user_id={user_id}: {lang}")
 
-        # Dispatch based on type
         data_type = payload.get("type")
         
         if data_type == "support":
-            # Handle support message
             message = (payload.get("message") or "").strip()
             if not message:
                 error_text = translations['support_empty'][lang]
-                async def send_error():
-                    return await context.bot.send_message(chat_id=user_id, text=error_text)
-                await retry_on_timeout(send_error, chat_id=user_id, message_text=error_text)
+                await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=error_text)
                 return
 
-            try:
-                # Forward to support chat with user ID
-                forward_text = (
-                    f"📨 Новый вопрос от пользователя {update.effective_user.first_name or ''} "
-                    f"(@{update.effective_user.username or 'нет'})\n"
-                    f"ID пользователя: {user_id}\n\n"
-                    f"{message}"
-                )
-                await context.bot.send_message(SUPPORT_CHAT_ID, forward_text)
+            forward_text = (
+                f"📨 Новый вопрос от пользователя {update.effective_user.first_name or ''} "
+                f"(@{update.effective_user.username or 'нет'})\n"
+                f"ID пользователя: {user_id}\n\n{message}"
+            )
+            await context.bot.send_message(SUPPORT_CHAT_ID, forward_text)
+            response_text = translations['support_sent'][lang]
+            await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=response_text)
 
-                # Confirm to user
-                response_text = translations['support_sent'][lang]
-                async def send_confirmation():
-                    return await context.bot.send_message(chat_id=user_id, text=response_text)
-                await retry_on_timeout(send_confirmation, chat_id=user_id, message_text=response_text)
-            except Exception as e:
-                logger.exception(f"Ошибка при пересылке сообщения поддержки для user_id={user_id}")
-                error_text = translations['processing_error'][lang]
-                async def send_error():
-                    return await context.bot.send_message(chat_id=user_id, text=error_text)
-                await retry_on_timeout(send_error, chat_id=user_id, message_text=error_text)
-        
         elif data_type == "settings":
-            # Handle settings update (original logic)
-            logger.info(f"Payload city: {payload.get('city')}")
-
-            # Проверяем наличие необходимых полей
             required_keys = {"city", "deal_type", "price_from", "price_to", "floor_from", "floor_to", "rooms_from", "rooms_to", "bedrooms_from", "bedrooms_to", "own_ads"}
             if not required_keys.issubset(payload.keys()):
-                logger.warning(f"Invalid Web App data format for user_id={user_id}: {payload}")
                 error_text = translations['invalid_data'][lang]
-                async def send_error():
-                    return await context.bot.send_message(chat_id=user_id, text=error_text)
-                await retry_on_timeout(send_error, chat_id=user_id, message_text=error_text)
+                await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=error_text)
                 return
 
-            # Формируем настройки
             settings = {
                 "city": payload["city"],
                 "districts": payload.get("districts", {}),
@@ -139,65 +117,54 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "bedrooms_to": str(payload["bedrooms_to"]),
                 "own_ads": str(payload["own_ads"])
             }
-            # Сохраняем настройки и язык в user:<user_id>
+
+            url = build_myhome_url(settings)
+
             user_data = {
-                "settings": orjson.dumps(settings),
+                "settings": url,
                 "filters_timestamp": str(int(time.time())),
-                "language": payload.get("language", "ru")  # Save language from payload
+                "language": payload.get("language", "ru")
             }
             save_user_data(user_id, user_data)
-            redis_client.expire(f"user:{user_id}", INACTIVITY_TTL)  # Ensure TTL is set
+            redis_client.expire(f"user:{user_id}", INACTIVITY_TTL)
 
-            user_data = redis_client.hgetall(f"user:{user_id}")
-            if user_data.get("bot_status", "stopped") == "running":
+            if redis_client.hget(f"user:{user_id}", "bot_status") == "running":
                 redis_client.sadd("subscribed_users", user_id)
-                logger.info(f"✅ Added user_id={user_id} to subscribed_users")
-            logger.info(f"✅ Saved settings for user_id={user_id}: {settings}")
-            logger.info(f"📋 Current subscribed_users: {redis_client.smembers('subscribed_users')}")
-            
-            # Проверяем подписку и статус бота
-            subscription_end = user_data.get("subscription_end", "0")
-            bot_status = user_data.get("bot_status", "stopped")
-            logger.info(f"Webhook update for user_id={user_id}: subscription_end={subscription_end}, bot_status={bot_status}")
 
-            # Force cache refresh
             await context.application.subscription_manager.refresh_subscriptions()
 
-            # Формируем ответ
+            # Формируем текст для отправки
             city_map = {"1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}
             deal_type_map = {"1": "Продажа", "2": "Аренда"}
 
-            city = city_map.get(settings.get("city"), "Не выбран" if lang == "ru" else "Not selected")
-            deal_type = deal_type_map.get(settings.get("deal_type"), "Не указан" if lang == "ru" else "Not set")
+            city = city_map.get(settings["city"], "Не выбран")
+            deal_type = deal_type_map.get(settings["deal_type"], "Не указано")
+            districts = settings.get("districts", {}).get(city.lower(), [])
+            price = f'{settings["price_from"]}-{settings["price_to"]}$'
+            floor = f'{settings["floor_from"]}-{settings["floor_to"]}'
+            rooms = f'{settings["rooms_from"]}-{settings["rooms_to"]}'
+            bedrooms = f'{settings["bedrooms_from"]}-{settings["bedrooms_to"]}'
+            own_ads = "Да" if settings["own_ads"] == "1" else "Нет"
 
-            response_text = translations['settings_saved'][lang].format(
-            city = city,    
-            districts = ', '.join(settings.get("districts", {}).values()) or ("Не выбраны" if lang == "ru" else "Not selected"),
-            deal_type = deal_type,
-            price_from = settings.get("price_from") or ("Не указано" if lang == "ru" else "Not specified"),
-            price_to = settings.get("price_to") or ("Не указано" if lang == "ru" else "Not specified"),
-            floor_from = settings.get("floor_from") or ("Не указано" if lang == "ru" else "Not specified"),
-            floor_to = settings.get("floor_to") or ("Не указано" if lang == "ru" else "Not specified"),
-            rooms_from = settings.get("rooms_from") or ("Не указано" if lang == "ru" else "Not specified"),
-            rooms_to = settings.get("rooms_to") or ("Не указано" if lang == "ru" else "Not specified"),
-            bedrooms_from = settings.get("bedrooms_from") or ("Не указано" if lang == "ru" else "Not specified"),
-            bedrooms_to = settings.get("bedrooms_to") or ("Не указано" if lang == "ru" else "Not specified"),
-            own_ads = ("Да" if settings.get("own_ads") == "1" else "Нет") if lang == "ru" else ("Yes" if settings.get("own_ads") == "1" else "No")
+            response_text = (
+                "✅ Фильтры сохранены!\n"
+                f"Город: {city}\n"
+                f"Районы: {', '.join(districts) if districts else 'Не выбраны'}\n"
+                f"Тип сделки: {deal_type}\n"
+                f"Цена: {price}\n"
+                f"Этаж: {floor}\n"
+                f"Комнат: {rooms}\n"
+                f"Спален: {bedrooms}\n"
+                f"Только собственник: {own_ads}"
             )
-            async def send_confirmation():
-                return await context.bot.send_message(chat_id=user_id, text=response_text)
-            await retry_on_timeout(send_confirmation, chat_id=user_id, message_text=response_text)
+
+            await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=response_text)
 
         else:
-            logger.warning(f"Unknown type in WebApp data for user_id={user_id}: {data_type}")
             error_text = translations['unknown_type'][lang]
-            async def send_error():
-                return await context.bot.send_message(chat_id=user_id, text=error_text)
-            await retry_on_timeout(send_error, chat_id=user_id, message_text=error_text)
+            await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=error_text)
 
     except Exception as e:
         logger.error(f"❌ Error processing Web App data for user_id={user_id}: {e}", exc_info=True)
         error_text = translations['processing_error'][lang]
-        async def send_error():
-            return await send_status_message(user_id, context, error_text)
-        await retry_on_timeout(send_error, chat_id=user_id, message_text=error_text)
+        await retry_on_timeout(send_status_message, user_id=user_id, context=context, message_text=error_text)
