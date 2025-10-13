@@ -21,7 +21,7 @@ def build_myhome_url(settings: dict) -> str:
     floor_to = settings["floor_to"]
     rooms = ",".join(str(i) for i in range(int(settings["rooms_from"]), int(settings["rooms_to"]) + 1))
     bedrooms = ",".join(str(i) for i in range(int(settings["bedrooms_from"]), int(settings["bedrooms_to"]) + 1))
-    own_ads = "physical" if settings["own_ads"] == "1" else "all"
+    own_ads = "physical" if settings["own_ads"] in [True, "1", 1, "True"] else "all"
 
     # District and urban mapping
     city_map = {
@@ -167,4 +167,4 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Error processing Web App data for user_id={user_id}: {e}", exc_info=True)
         error_text = translations['processing_error'][lang]
-        await retry_on_timeout(send_status_message, user_id=user_id, context=context, message_text=error_text)
+        await retry_on_timeout(send_status_message, user_id, context, error_text)
