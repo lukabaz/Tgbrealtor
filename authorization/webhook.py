@@ -204,11 +204,32 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             city = city_map.get(settings["city"], "Не выбран")
             deal_type = deal_type_map.get(settings["deal_type"], "Не указано")
             districts = settings.get("districts", {}).get(city.lower(), [])
-            price = f'{settings["price_from"]}-{settings["price_to"]}$'
-            floor = f'{settings["floor_from"]}-{settings["floor_to"]}'
-            rooms = f'{settings["rooms_from"]}-{settings["rooms_to"]}'
-            bedrooms = f'{settings["bedrooms_from"]}-{settings["bedrooms_to"]}'
             own_ads = "Да" if str(settings["own_ads"]).lower() == "true" else "Нет"
+
+            # 👉 Вспомогательная функция форматирования
+            def format_range(start, end, suffix="", lang="ru"):
+                try:
+                    start = int(start)
+                except (ValueError, TypeError):
+                    start = None
+                try:
+                    end = int(end)
+                except (ValueError, TypeError):
+                    end = None
+
+                if start is None and end is None:
+                    return "Не указано"
+                elif start is None:
+                    return f"До {end}{suffix}"
+                elif end is None:
+                    return f"От {start}{suffix}"
+                else:
+                    return f"{start}-{end}{suffix}"
+
+            price = format_range(settings["price_from"], settings["price_to"], suffix="$", lang=lang)
+            floor = format_range(settings["floor_from"], settings["floor_to"], lang=lang)
+            rooms = format_range(settings["rooms_from"], settings["rooms_to"], lang=lang)
+            bedrooms = format_range(settings["bedrooms_from"], settings["bedrooms_to"], lang=lang)
 
             response_text = (
                 "✅ Фильтры сохранены!\n"
