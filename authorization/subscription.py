@@ -84,6 +84,7 @@ async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, 
 
 async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cm = update.my_chat_member
+    logger.info(f"👤 welcome_new_user triggered for chat_id={cm.chat.id}, new_status={cm.new_chat_member.status}")
     if cm.chat.type == "private" and cm.new_chat_member.status == "member":
         user_data = get_user_data(cm.chat.id)
         lang = get_user_language(update, user_data)
