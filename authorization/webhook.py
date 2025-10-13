@@ -12,58 +12,121 @@ from utils.translations import translations
 
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 
-def build_myhome_url(settings: dict) -> str:
-    city_id = settings["city"]
-    deal_type = settings["deal_type"]
-    price_from = settings["price_from"]
-    price_to = settings["price_to"]
-    floor_from = settings["floor_from"]
-    floor_to = settings["floor_to"]
-    rooms = ",".join(str(i) for i in range(int(settings["rooms_from"]), int(settings["rooms_to"]) + 1))
-    bedrooms = ",".join(str(i) for i in range(int(settings["bedrooms_from"]), int(settings["bedrooms_to"]) + 1))
-    own_ads = "physical" if str(settings.get("own_ads", "")).lower() == "true" else "all"
 
-    # District and urban mapping
+def safe_int(value, default=0):
+    try:
+        return int(str(value).replace(" ", ""))
+    except (ValueError, TypeError):
+        return default
+
+
+def build_myhome_url(settings: dict) -> str:
     city_map = {
-        "1": {"id": 1, "slug": "Tbilisi", "districts": {}, "urbans": []},
-        "2": {"id": 15, "slug": "Batumi", "districts": {"Rustaveli": 8, "Agmashenebeli": 10, "Bagrationi": 9}, "urbans": [72, 74, 73]},
-        "3": {"id": 2, "slug": "Kutaisi", "districts": {}, "urbans": []}
+        "1": {"id": "1", "slug": "Tbilisi"},
+        "2": {"id": "15", "slug": "Batumi"},
+        "3": {"id": "3", "slug": "Kutaisi"},
     }
 
+    district_map = {
+        "tbilisi": {
+            "Vake-Saburtalo": {"district": "10"},
+            "Didube-Chugureti": {"district": "11"},
+            "Gldani-Nadzaladevi": {"district": "12"},
+            "Isani-Samgori": {"district": "13"},
+            "Tbilisi Suburb": {"district": "14"},
+        },
+        "batumi": {
+            "Rustaveli": {"district": "8", "urban": "72"},
+            "Bagrationi": {"district": "9", "urban": "73"},
+            "Agmashenebeli": {"district": "10", "urban": "74"},
+            "Javakhishvilli": {"district": "11", "urban": "75"},
+            "Khimshiashvili": {"district": "13", "urban": "76"},
+            "Airport": {"district": "15", "urban": "77"},
+            "Old Batumi": {"district": "7", "urban": "71"},
+            "Makhinjauri": {"district": "466"},
+            "Tamar": {"district": "2999"},
+            "Boni-Gorodok": {"district": "3009"},
+            "Kakhabri": {"district": "2995"},
+        },
+        "kutaisi": {
+            "Byols": {"district": "20"},
+            "Avtokarkhana": {"district": "21"},
+            "Nikea": {"district": "22"},
+            "Hill": {"district": "23"},
+            "Choma": {"district": "24"},
+        },
+    }
+
+    city_id = settings.get("city")
     city_info = city_map.get(city_id)
     if not city_info:
         return ""
 
-    # Convert selected district names to their IDs
-    selected_districts = settings.get("districts", {}).get(city_info["slug"].lower(), [])
-    district_ids = [str(city_info["districts"][d]) for d in selected_districts if d in city_info["districts"]]
-    urbans = ",".join(str(u) for u in city_info["urbans"])
+    city_key = city_info["slug"].lower()
+    selected_districts = settings.get("districts", {}).get(city_key, [])
 
-    base_url = f"https://www.myhome.ge/ru/s/qiravdeba-bina-{city_info['slug']}shi"
+    districts = []
+    urbans = []
+
+    for name in selected_districts:
+        mapping = district_map.get(city_key, {}).get(name)
+        if mapping:
+            if "district" in mapping:
+                districts.append(mapping["district"])
+            if "urban" in mapping:
+                urbans.append(mapping["urban"])
+
+    deal_type_map = {"sale": "1", "rent": "2"}
+    deal_type = deal_type_map.get(settings.get("deal_type", ""), "1")
+
+    price_from = safe_int(settings.get("price_from"))
+    price_to = safe_int(settings.get("price_to"))
+    floor_from = safe_int(settings.get("floor_from"))
+    floor_to = safe_int(settings.get("floor_to"))
+    rooms_from = safe_int(settings.get("rooms_from"))
+    rooms_to = safe_int(settings.get("rooms_to"))
+    bedrooms_from = safe_int(settings.get("bedrooms_from"))
+    bedrooms_to = safe_int(settings.get("bedrooms_to"))
+
+    rooms = ",".join(str(i) for i in range(rooms_from, rooms_to + 1)) if rooms_from and rooms_to else ""
+    bedrooms = ",".join(str(i) for i in range(bedrooms_from, bedrooms_to + 1)) if bedrooms_from and bedrooms_to else ""
+    own_ads = "physical" if str(settings.get("own_ads", "")).lower() == "true" else "all"
+
+    base_path = {
+        "1": "/s/iyideba-bina-Tbilisshi",
+        "2": "/s/qiravdeba-bina-Batumshi",
+        "3": "/s/iyideba-bina-Kutaisshi"
+    }.get(city_id, "/s/iyideba-bina-Tbilisshi")
+
+    base_url = f"https://www.myhome.ge/ru{base_path}"
+
     params = [
-        f"CardView=1",
-        f"real_estate_types=1",
-        f"with_picture=1",
-        f"currency_id=2",
-        f"order_by=date",
-        f"sequence=desc",
+        "CardView=1",
+        "real_estate_types=1",
+        "with_picture=1",
+        "currency_id=2",
+        "order_by=date",
+        "sequence=desc",
         f"cities={city_info['id']}",
         f"deal_types={deal_type}",
         f"price_from={price_from}",
         f"price_to={price_to}",
         f"floor_from={floor_from}",
         f"floor_to={floor_to}",
-        f"room_types={rooms}",
-        f"bedroom_types={bedrooms}",
         f"owner_type={own_ads}",
-        f"page=1"
+        "page=1",
     ]
-    if district_ids:
-        params.append(f"districts={','.join(district_ids)}")
+    if rooms:
+        params.append(f"room_types={rooms}")
+    if bedrooms:
+        params.append(f"bedroom_types={bedrooms}")
+    if districts:
+        params.append(f"districts={','.join(districts)}")
     if urbans:
-        params.append(f"urbans={urbans}")
+        params.append(f"urbans={','.join(urbans)}")
 
     return f"{base_url}?{'&'.join(params)}"
+
 
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.web_app_data:
@@ -79,7 +142,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = lang if lang in ['ru', 'en'] else 'en'
 
         data_type = payload.get("type")
-        
+
         if data_type == "support":
             message = (payload.get("message") or "").strip()
             if not message:
@@ -97,25 +160,19 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=response_text)
 
         elif data_type == "settings":
-            required_keys = {"city", "deal_type", "price_from", "price_to", "floor_from", "floor_to", "rooms_from", "rooms_to", "bedrooms_from", "bedrooms_to", "own_ads"}
-            if not required_keys.issubset(payload.keys()):
-                error_text = translations['invalid_data'][lang]
-                await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=error_text)
-                return
-
             settings = {
-                "city": payload["city"],
+                "city": payload.get("city"),
                 "districts": payload.get("districts", {}),
-                "deal_type": payload["deal_type"],
-                "price_from": str(payload["price_from"]),
-                "price_to": str(payload["price_to"]),
-                "floor_from": str(payload["floor_from"]),
-                "floor_to": str(payload["floor_to"]),
-                "rooms_from": str(payload["rooms_from"]),
-                "rooms_to": str(payload["rooms_to"]),
-                "bedrooms_from": str(payload["bedrooms_from"]),
-                "bedrooms_to": str(payload["bedrooms_to"]),
-                "own_ads": str(payload["own_ads"])
+                "deal_type": payload.get("deal_type"),
+                "price_from": payload.get("price_from"),
+                "price_to": payload.get("price_to"),
+                "floor_from": payload.get("floor_from"),
+                "floor_to": payload.get("floor_to"),
+                "rooms_from": payload.get("rooms_from"),
+                "rooms_to": payload.get("rooms_to"),
+                "bedrooms_from": payload.get("bedrooms_from"),
+                "bedrooms_to": payload.get("bedrooms_to"),
+                "own_ads": payload.get("own_ads", False),
             }
 
             url = build_myhome_url(settings)
@@ -123,8 +180,9 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data = {
                 "settings": url,
                 "filters_timestamp": str(int(time.time())),
-                "language": payload.get("language", "ru")
+                "language": payload.get("language", "ru"),
             }
+
             save_user_data(user_id, user_data)
             redis_client.expire(f"user:{user_id}", INACTIVITY_TTL)
 
@@ -133,9 +191,8 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await context.application.subscription_manager.refresh_subscriptions()
 
-            # Формируем текст для отправки
             city_map = {"1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}
-            deal_type_map = {"1": "Продажа", "2": "Аренда"}
+            deal_type_map = {"sale": "Продажа", "rent": "Аренда"}
 
             city = city_map.get(settings["city"], "Не выбран")
             deal_type = deal_type_map.get(settings["deal_type"], "Не указано")
@@ -144,7 +201,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             floor = f'{settings["floor_from"]}-{settings["floor_to"]}'
             rooms = f'{settings["rooms_from"]}-{settings["rooms_to"]}'
             bedrooms = f'{settings["bedrooms_from"]}-{settings["bedrooms_to"]}'
-            own_ads = "Да" if settings["own_ads"] == "1" else "Нет"
+            own_ads = "Да" if str(settings["own_ads"]).lower() == "true" else "Нет"
 
             response_text = (
                 "✅ Фильтры сохранены!\n"
@@ -167,4 +224,4 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Error processing Web App data for user_id={user_id}: {e}", exc_info=True)
         error_text = translations['processing_error'][lang]
-        await retry_on_timeout(send_status_message, user_id, context, error_text)
+        await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=error_text)
