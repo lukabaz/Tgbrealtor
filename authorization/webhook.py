@@ -147,7 +147,9 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message = (payload.get("message") or "").strip()
             if not message:
                 error_text = translations['support_empty'][lang]
-                await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=error_text)
+                async def send_error():
+                    return await context.bot.send_message(chat_id=user_id, text=error_text)
+                await retry_on_timeout(send_error)
                 return
 
             forward_text = (
@@ -155,9 +157,14 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"(@{update.effective_user.username or 'нет'})\n"
                 f"ID пользователя: {user_id}\n\n{message}"
             )
-            await context.bot.send_message(SUPPORT_CHAT_ID, forward_text)
+            async def send_to_support():
+                return await context.bot.send_message(SUPPORT_CHAT_ID, forward_text)
+            await retry_on_timeout(send_to_support)
+
             response_text = translations['support_sent'][lang]
-            await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=response_text)
+            async def send_confirmation():
+                return await context.bot.send_message(chat_id=user_id, text=response_text)
+            await retry_on_timeout(send_confirmation)
 
         elif data_type == "settings":
             settings = {
@@ -189,7 +196,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if redis_client.hget(f"user:{user_id}", "bot_status") == "running":
                 redis_client.sadd("subscribed_users", user_id)
 
-            #await context.application.subscription_manager.refresh_subscriptions()
+            await context.application.subscription_manager.refresh_subscriptions()
 
             city_map = {"1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}
             deal_type_map = {"sale": "Продажа", "rent": "Аренда"}
@@ -215,13 +222,19 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Только собственник: {own_ads}"
             )
 
-            await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=response_text)
+            async def send_confirmation():
+                return await context.bot.send_message(chat_id=user_id, text=response_text)
+            await retry_on_timeout(send_confirmation)
 
         else:
             error_text = translations['unknown_type'][lang]
-            await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=error_text)
+            async def send_unknown():
+                return await context.bot.send_message(chat_id=user_id, text=error_text)
+            await retry_on_timeout(send_unknown)
 
     except Exception as e:
         logger.error(f"❌ Error processing Web App data for user_id={user_id}: {e}", exc_info=True)
         error_text = translations['processing_error'][lang]
-        await retry_on_timeout(context.bot.send_message, chat_id=user_id, text=error_text)
+        async def send_error():
+            return await context.bot.send_message(chat_id=user_id, text=error_text)
+        await retry_on_timeout(send_error)
