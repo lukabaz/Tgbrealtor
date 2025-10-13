@@ -189,7 +189,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if redis_client.hget(f"user:{user_id}", "bot_status") == "running":
                 redis_client.sadd("subscribed_users", user_id)
 
-            await context.application.subscription_manager.refresh_subscriptions()
+            #await context.application.subscription_manager.refresh_subscriptions()
 
             city_map = {"1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}
             deal_type_map = {"sale": "Продажа", "rent": "Аренда"}
