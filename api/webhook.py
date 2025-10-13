@@ -1,16 +1,13 @@
 # api/webhook
 import os
-import asyncio
 from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler, CommandHandler
 import orjson  # Для JSON parse (как в webhook.py)
-from datetime import datetime, timezone
 from authorization.subscription import save_user_data, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers из subscription (без handle_user_message)
 from authorization.webhook import webhook_update  # , format_filters_response Импорт webhook_update и format
 from authorization.support import handle_support_text  # Отдельный импорт для handle_user_message
 from utils.logger import logger
-from utils.telegram_utils import retry_on_timeout
 from config import TELEGRAM_TOKEN
 from config import SUPPORT_CHAT_ID
 
@@ -45,29 +42,19 @@ async def init_application():
 
 @app.post("/telegram-webhook")
 async def telegram_webhook(request: Request):
-    global application
-
-    # Проверка: если event loop закрыт — пересоздаём
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError("Event loop is closed")
-    except RuntimeError:
-        # Создаём новый loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        application = None  # 💥 ВАЖНО: Заставим пересоздать application в новом loop-е
-
-    # Lazy init (или повторная инициализация после краша loop-а)
-    if application is None:
-        await init_application()
-
     try:
         body = await request.body()
         update_json = orjson.loads(body)
+        # 🔁 Создание нового Telegram Application на каждый запрос
+        application = Application.builder().token(TELEGRAM_TOKEN).build()
+        await application.initialize()
+
         update = Update.de_json(update_json, application.bot)
         await application.process_update(update)
+
+        await application.shutdown()  # 🧹 Обязательное завершение
         return {"ok": True}
+    
     except Exception as e:
         logger.exception(f"Telegram webhook error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
