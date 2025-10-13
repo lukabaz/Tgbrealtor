@@ -21,7 +21,7 @@ def build_myhome_url(settings: dict) -> str:
     floor_to = settings["floor_to"]
     rooms = ",".join(str(i) for i in range(int(settings["rooms_from"]), int(settings["rooms_to"]) + 1))
     bedrooms = ",".join(str(i) for i in range(int(settings["bedrooms_from"]), int(settings["bedrooms_to"]) + 1))
-    own_ads = "physical" if settings["own_ads"] in [True, "1", 1, "True"] else "all"
+    own_ads = "physical" if str(settings.get("own_ads", "")).lower() == "true" else "all"
 
     # District and urban mapping
     city_map = {
