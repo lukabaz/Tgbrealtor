@@ -84,7 +84,6 @@ async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, 
 
 async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cm = update.my_chat_member
-    logger.info(f"👤 welcome_new_user triggered for chat_id={cm.chat.id}, new_status={cm.new_chat_member.status}")
     if cm.chat.type == "private" and cm.new_chat_member.status == "member":
         user_data = get_user_data(cm.chat.id)
         lang = get_user_language(update, user_data)
@@ -102,8 +101,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in [translations['start_button']['ru'], translations['start_button']['en']]:
         if is_subscription_active(chat_id):
             save_bot_status(chat_id, "running")
-            #await context.application.subscription_manager.refresh_subscriptions(source="all")
-            #logger.info(f"🔄 Skipped cache refresh for chat_id={chat_id} (subscription_manager not verified)") # 08.10
+            #await context.application.subscription_manager.refresh_subscriptions(source="all") 
             logger.info(f"🔄 Cache refreshed after start for chat_id={chat_id}") 
             start_text = translations['start'][lang]
             await send_status_message(chat_id, context, start_text, lang)
@@ -124,7 +122,6 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text in [translations['stop_button']['ru'], translations['stop_button']['en']]:
         save_bot_status(chat_id, "stopped")
         #await context.application.subscription_manager.refresh_subscriptions(source="all")
-        #logger.info(f"🔄 Skipped cache refresh for chat_id={chat_id} (subscription_manager not verified)") # 08.10
         logger.info(f"🔄 Cache refreshed after stop for chat_id={chat_id}")
         stop_text = translations['stop_expired'][lang] if not is_subscription_active(chat_id) else translations['stop'][lang]
         await send_status_message(chat_id, context, stop_text, lang)
