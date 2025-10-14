@@ -12,13 +12,11 @@ from utils.translations import translations
 
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 
-
 def safe_int(value, default=0):
     try:
         return int(str(value).replace(" ", ""))
     except (ValueError, TypeError):
         return default
-
 
 def build_myhome_url(settings: dict) -> str:
     city_map = {
@@ -127,7 +125,6 @@ def build_myhome_url(settings: dict) -> str:
 
     return f"{base_url}?{'&'.join(params)}"
 
-
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.web_app_data:
         return
@@ -182,6 +179,9 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "own_ads": payload.get("own_ads", False),
             }
 
+            # Логирование содержимого settings["districts"]
+            logger.debug(f"Settings districts: {settings['districts']}")
+
             url = build_myhome_url(settings)
 
             user_data = {
@@ -196,17 +196,16 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if redis_client.hget(f"user:{user_id}", "bot_status") == "running":
                 redis_client.sadd("subscribed_users", user_id)
 
-            #await context.application.subscription_manager.refresh_subscriptions()
-
             city_map = {"1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}
+            city_key_map = {"1": "tbilisi", "2": "batumi", "3": "kutaisi"}
             deal_type_map = {"sale": "Продажа", "rent": "Аренда"}
 
             city = city_map.get(settings["city"], "Не выбран")
+            city_key = city_key_map.get(settings["city"], "tbilisi")
             deal_type = deal_type_map.get(settings["deal_type"], "Не указано")
-            districts = settings.get("districts", {}).get(city.lower(), [])
+            districts = settings.get("districts", {}).get(city_key, [])
             own_ads = "Да" if str(settings["own_ads"]).lower() == "true" else "Нет"
 
-            # 👉 Вспомогательная функция форматирования
             def format_range(start, end, suffix="", lang="ru"):
                 try:
                     start = int(start)
