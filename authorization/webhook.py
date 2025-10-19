@@ -215,6 +215,30 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             districts = settings.get("districts", {}).get(city_key, [])
             own_ads = "Да" if str(settings["own_ads"]).lower() == "true" else "Нет"
 
+            # === Сохранение фильтра агента в MongoDB ===
+            agent_doc = {
+                "chat_id": user_id,
+                "language": lang,
+                "active": True,
+                "updated_at": datetime.utcnow(),
+                "filters": {
+                    "city": city_map.get(settings["city"], "Unknown"),
+                    "deal_type": settings.get("deal_type"),
+                    "price_from": safe_int(settings.get("price_from")),
+                    "price_to": safe_int(settings.get("price_to")),
+                    "rooms_from": safe_int(settings.get("rooms_from")),
+                    "rooms_to": safe_int(settings.get("rooms_to")),
+                    "districts": settings.get("districts", {}).get(city_key, []),
+                    "own_ads": str(settings.get("own_ads")).lower() == "true"
+                }
+            }
+
+            agents_collection.update_one(
+                {"chat_id": user_id},
+                {"$set": agent_doc, "$setOnInsert": {"created_at": datetime.utcnow()}},
+                upsert=True
+            )
+
             def format_range(start, end, suffix="", lang="ru"):
                 try:
                     start = int(start)
