@@ -3,7 +3,7 @@ import logging
 
 # Настройка логгера
 logger = logging.getLogger("real_estate_bot")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # Чтобы не дублировать хендлеры, если модуль импортируется несколько раз
 if not logger.handlers:

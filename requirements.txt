@@ -3,3 +3,4 @@ redis==5.2.1
 orjson==3.10.18
 fastapi==0.115.0
 uvicorn==0.31.0
+pymongo==4.15.3

@@ -10,6 +10,15 @@ from utils.redis_client import redis_client
 from utils.telegram_utils import retry_on_timeout
 from utils.translations import translations
 
+from pymongo import MongoClient
+from datetime import datetime
+from config import MONGO_URI
+
+mongo = MongoClient(MONGO_URI)
+db = mongo["real_estate"]
+agents_collection = db["agents"]
+
+
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 
 def safe_int(value, default=0):
@@ -184,14 +193,45 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             url = build_myhome_url(settings)
 
-            user_data = {
-                "settings": url,
-                "filters_timestamp": str(int(time.time())),
-                "language": payload.get("language", "ru"),
-            }
+            city_slug_map = {"1": "tbilisi", "2": "batumi", "3": "kutaisi"}
+            deal_type = settings.get("deal_type")  # "sale" или "rent"
+            city_slug = city_slug_map.get(settings["city"])
+
+            if city_slug and deal_type:
+               redis_client.hset(f"user:{user_id}", mapping={
+                    f"settings:{city_slug}:{deal_type}": url,
+                    f"filters_timestamp:{city_slug}:{deal_type}": str(int(time.time())),
+                    "language": payload.get("language", "ru")
+                })
 
             save_user_data(user_id, user_data)
             redis_client.expire(f"user:{user_id}", INACTIVITY_TTL)
+
+            # === Сохранение фильтра агента в MongoDB ===
+            agent_doc = {
+                "chat_id": user_id,
+                "first_name": update.effective_user.first_name,
+                "username": update.effective_user.username,
+                "language": lang,
+                "active": True,
+                "updated_at": datetime.utcnow(),
+                "filters": {
+                    "city": city_map.get(settings["city"], "Unknown"),
+                    "deal_type": settings.get("deal_type"),
+                    "price_from": safe_int(settings.get("price_from")),
+                    "price_to": safe_int(settings.get("price_to")),
+                    "rooms_from": safe_int(settings.get("rooms_from")),
+                    "rooms_to": safe_int(settings.get("rooms_to")),
+                    "districts": settings.get("districts", {}).get(city_key, []),
+                    "own_ads": str(settings.get("own_ads")).lower() == "true"
+                }
+            }
+
+            agents_collection.update_one(
+                {"chat_id": user_id},
+                {"$set": agent_doc, "$setOnInsert": {"created_at": datetime.utcnow()}},
+                upsert=True
+            )
 
             if redis_client.hget(f"user:{user_id}", "bot_status") == "running":
                 redis_client.sadd("subscribed_users", user_id)
@@ -216,14 +256,24 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except (ValueError, TypeError):
                     end = None
 
-                if start is None and end is None:
-                    return "Не указано"
-                elif start is None:
-                    return f"До {end}{suffix}"
-                elif end is None:
-                    return f"От {start}{suffix}"
-                else:
-                    return f"{start}-{end}{suffix}"
+                if lang == "en":
+                    if start is None and end is None:
+                        return "Not specified"
+                    elif start is None:
+                        return f"Up to {end}{suffix}"
+                    elif end is None:
+                        return f"From {start}{suffix}"
+                    else:
+                        return f"{start}-{end}{suffix}"
+                else:  # default to Russian
+                    if start is None and end is None:
+                       return "Не указано"
+                    elif start is None:
+                        return f"До {end}{suffix}"
+                    elif end is None:
+                        return f"От {start}{suffix}"
+                    else:
+                        return f"{start}-{end}{suffix}"
 
             price = format_range(settings["price_from"], settings["price_to"], suffix="$", lang=lang)
             floor = format_range(settings["floor_from"], settings["floor_to"], lang=lang)
