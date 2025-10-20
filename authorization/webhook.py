@@ -31,7 +31,7 @@ def build_myhome_url(settings: dict) -> str:
     city_map = {
         "1": {"id": "1", "slug": "Tbilisi"},
         "2": {"id": "15", "slug": "Batumi"},
-        "3": {"id": "3", "slug": "Kutaisi"},
+        "3": {"id": "96", "slug": "Kutaisi"},
     }
 
     district_map = {
@@ -226,8 +226,12 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "deal_type": settings.get("deal_type"),
                     "price_from": safe_int(settings.get("price_from")),
                     "price_to": safe_int(settings.get("price_to")),
+                    "floor_from": safe_int(settings.get("floor_from")),      
+                    "floor_to": safe_int(settings.get("floor_to")), 
                     "rooms_from": safe_int(settings.get("rooms_from")),
                     "rooms_to": safe_int(settings.get("rooms_to")),
+                    "bedrooms_from": safe_int(settings.get("bedrooms_from")),  
+                    "bedrooms_to": safe_int(settings.get("bedrooms_to")),  
                     "districts": settings.get("districts", {}).get(city_key, []),
                     "own_ads": str(settings.get("own_ads")).lower() == "true"
                 }
