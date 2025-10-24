@@ -4,7 +4,7 @@ import time
 from telegram import Update
 from telegram.ext import ContextTypes
 from config import SUPPORT_CHAT_ID
-from authorization.subscription import save_user_data, send_status_message
+from authorization.subscription import save_user_data
 from utils.logger import logger
 from utils.redis_client import redis_client
 from utils.telegram_utils import retry_on_timeout
@@ -219,7 +219,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             agent_doc = {
                 "chat_id": user_id,
                 "language": lang,
-                "active": True,
+                "active": False,  # ❗️по умолчанию выключен, активируется позже при запуске
                 "updated_at": datetime.utcnow(),
                 "filters": {
                     "city": city_map.get(settings["city"], "Unknown"),

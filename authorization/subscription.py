@@ -18,7 +18,7 @@ def get_user_data(chat_id: int):
     return redis_client.hgetall(f"user:{chat_id}")
 
 def get_end_of_subscription():
-    subscription_end = datetime.now(timezone.utc) + timedelta(days=30)
+    subscription_end = datetime.now(timezone.utc) + timedelta(days=7)
     return int(subscription_end.timestamp())
 
 def save_bot_status(chat_id: int, status: str, set_sub_end: bool = False, custom_sub_end: datetime | None = None):
@@ -115,7 +115,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     payload=f"toggle_bot_status:{chat_id}:stopped",
                     provider_token="",
                     currency="XTR",
-                    prices=[{"label": translations['invoice_label'][lang], "amount": 2500}],
+                    prices=[{"label": translations['invoice_label'][lang], "amount": 10000}],
                     start_parameter="toggle-bot-status"
                 )
             await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=invoice_text)
@@ -145,7 +145,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     payload=f"toggle_bot_status:{chat_id}:stopped",
                     provider_token="",
                     currency="XTR",
-                    prices=[{"label": translations['invoice_label'][lang], "amount": 2500}],
+                    prices=[{"label": translations['invoice_label'][lang], "amount": 10000}],
                     start_parameter="toggle-bot-status"
                 )
             await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=translations['invoice'][lang])
@@ -172,9 +172,9 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     current_end = datetime.fromtimestamp(current_end_ts, tz=timezone.utc)
 
     if current_end > now:
-        new_end = current_end + timedelta(days=30)
+        new_end = current_end + timedelta(days=7)
     else:
-        new_end = now + timedelta(days=30)
+        new_end = now + timedelta(days=7)
 
     save_bot_status(chat_id, new_status, custom_sub_end=new_end)
     formatted_date = new_end.strftime("%d-%m-%Y %H:%M" if lang == "ru" else "%Y-%m-%d %H:%M")
