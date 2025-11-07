@@ -1,5 +1,6 @@
 # api/webhook
 import os
+import asyncio
 from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
@@ -44,11 +45,28 @@ async def telegram_webhook(request: Request):
         update_json = orjson.loads(body)
 
         application = await build_application()
-
         update = Update.de_json(update_json, application.bot)
+
+        # Определяем, нужно ли ждать (новый пользователь в чатах)
+        is_new_user = False
+        if update.my_chat_member:
+            status = update.my_chat_member.new_chat_member.status
+            # Если пользователь только присоединился или активировал бота
+            if status in ["member", "administrator"]:
+                is_new_user = True
+
         await application.process_update(update)
 
-        await application.shutdown()  # Обязательно! Чистим loop
+        async def shutdown_later(app, delay: float = 0.0):
+            if delay > 0:
+                await asyncio.sleep(delay)
+            await app.shutdown()
+
+        # 🔹 Только для новых пользователей даем задержку
+        if is_new_user:
+            asyncio.create_task(shutdown_later(application, delay=1.5))
+        else:
+            asyncio.create_task(shutdown_later(application))
 
         return {"ok": True}
     
