@@ -17,7 +17,7 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None
 )
-# функция удаления сообщения
+# Функция удаления сообщения
 async def handle_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()  # обязательный отклик Telegram
@@ -77,7 +77,7 @@ async def telegram_webhook(request: Request):
                 await asyncio.sleep(delay)
             await app.shutdown()
 
-        # 🔹 Только для новых пользователей даем задержку
+        # Только для новых пользователей даем задержку
         if is_new_user:
             asyncio.create_task(shutdown_later(application, delay=1.5))
         else:
