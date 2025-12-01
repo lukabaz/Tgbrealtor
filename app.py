@@ -1,3 +1,4 @@
+#  app.py
 import os  # Для env vars (PORT)
 from api.webhook import app  # Import FastAPI app from webhook.py
 
