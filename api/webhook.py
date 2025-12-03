@@ -41,7 +41,7 @@ async def handle_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("✅ Message deleted successfully")
         except Exception as e:
             print("Ошибка удаления:", e)
-     else:
+    else:
         print("ℹ️ callback not for removal")
 # Global Application (lazy init в эндпоинтах для serverless cold starts)
 #application = None
