@@ -19,19 +19,30 @@ app = FastAPI(
 )
 # Функция удаления сообщения
 async def handle_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("⚡ [handle_remove] ENTRY")
     query = update.callback_query
+    print("⚡ callback_query =", query)
+    if query is None:
+        print("❌ ERROR: query is None")
+        return
     await query.answer()  # обязательный отклик Telegram
+    print("⚡ query.data =", query.data)
 
-    data = query.data
+    data = query.data or ""
 
     if data.startswith("remove_"):
+        print("⚡ remove request detected")
+        print("⚡ try delete chat_id:", query.message.chat.id, "message_id:", query.message.message_id)
         try:
             await context.bot.delete_message(
                 chat_id=query.message.chat.id,
                 message_id=query.message.message_id
             )
+            print("✅ Message deleted successfully")
         except Exception as e:
             print("Ошибка удаления:", e)
+     else:
+        print("ℹ️ callback not for removal")
 # Global Application (lazy init в эндпоинтах для serverless cold starts)
 #application = None
 
