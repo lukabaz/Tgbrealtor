@@ -3,7 +3,7 @@ import os
 import asyncio
 from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryHandler, ChatMemberHandler
 import orjson  # Для JSON parse (как в webhook.py)
 from authorization.subscription import save_user_data, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers из subscription (без handle_user_message)
 from authorization.webhook import webhook_update  # , format_filters_response Импорт webhook_update и format
@@ -17,70 +17,26 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None
 )
-# Функция удаления сообщения
-async def handle_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if not query or not query.message:
-        logger.warning("callback_query или message = None")
-        return
-
-    try:
-        # обязателен ответ Telegram
-        await query.answer()
-
-        # удаляем сообщение
-        await context.bot.delete_message(
-            chat_id=query.message.chat.id,
-            message_id=query.message.message_id,
-        )
-        logger.info(f"✅ Удалено сообщение {query.message.message_id} для chat {query.message.chat.id}")
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка удаления сообщения: {e}")
 # Global Application (lazy init в эндпоинтах для serverless cold starts)
 #application = None
-application: Application | None = None
 
-async def build_application() -> Application:
-    global application
-    if application is None:
-        application = Application.builder().token(TELEGRAM_TOKEN).build()
-        await application.initialize()
+async def build_application():
+    """Создает Telegram Application с нужными хендлерами."""
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    await application.initialize()
 
-        # --- Хендлеры ---
-        application.add_handler(CallbackQueryHandler(handle_remove))
-        application.add_handler(
-            MessageHandler(
-                filters.Chat(SUPPORT_CHAT_ID) & filters.TEXT & ~filters.COMMAND,
-                handle_support_text
-            )
-        )
-        application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
-        application.add_handler(ChatMemberHandler(welcome_new_user, ChatMemberHandler.MY_CHAT_MEMBER))
-        application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
-        application.add_handler(PreCheckoutQueryHandler(pre_checkout))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
+    application.add_handler(MessageHandler(
+        filters.Chat(SUPPORT_CHAT_ID) & filters.TEXT & ~filters.COMMAND,
+        handle_support_text
+    ))
+   
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
+    application.add_handler(ChatMemberHandler(welcome_new_user, ChatMemberHandler.MY_CHAT_MEMBER))
+    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
+    application.add_handler(PreCheckoutQueryHandler(pre_checkout))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
 
     return application
-
-
-#async def build_application():
-#    """Создает Telegram Application с нужными хендлерами."""
-#    application = Application.builder().token(TELEGRAM_TOKEN).build()
-#    await application.initialize()
-
- #   application.add_handler(MessageHandler(
-  #      filters.Chat(SUPPORT_CHAT_ID) & filters.TEXT & ~filters.COMMAND,
- #       handle_support_text
-  #  ))
-   # application.add_handler(CallbackQueryHandler(handle_remove))
-  #  application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webhook_update))
-  #  application.add_handler(ChatMemberHandler(welcome_new_user, ChatMemberHandler.MY_CHAT_MEMBER))
-  #  application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
-  #  application.add_handler(PreCheckoutQueryHandler(pre_checkout))
-  #  application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
-
-  #  return application
 
 @app.post("/telegram-webhook")
 async def telegram_webhook(request: Request):
