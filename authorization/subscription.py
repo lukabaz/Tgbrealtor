@@ -68,7 +68,6 @@ def get_user_language(update: Update, user_data: dict) -> str:
     logger.info(f"Selected language for chat_id={update.effective_chat.id}: {lang}")
     return lang if lang in ['ru', 'en'] else 'en'
 
-
 def get_settings_keyboard(chat_id: int, lang: str):
     status = get_bot_status(chat_id)
     status_btn = translations['stop_button'][lang] if status == "running" else translations['start_button'][lang]

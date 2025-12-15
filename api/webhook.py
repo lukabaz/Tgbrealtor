@@ -47,28 +47,17 @@ async def telegram_webhook(request: Request):
         application = await build_application()
         update = Update.de_json(update_json, application.bot)
 
-        # Определяем, нужно ли ждать (новый пользователь в чатах)
-        is_new_user = False
-        if update.my_chat_member:
-            status = update.my_chat_member.new_chat_member.status
-            # Если пользователь только присоединился или активировал бота
-            if status in ["member", "administrator"]:
-                is_new_user = True
-
         await application.process_update(update)
 
         async def shutdown_later(app, delay: float = 0.0):
             if delay > 0:
                 await asyncio.sleep(delay)
             await app.shutdown()
+        # Определяем нового пользователя безопасно
+        is_new_user = getattr(update, "my_chat_member", None) and update.my_chat_member.new_chat_member.status in ["member", "administrator"]
+        # Управляемый delay для serverless
+        asyncio.create_task(shutdown_later(application, delay=1.5 if is_new_user else 1.5))
 
-        # Только для новых пользователей даем задержку
-        if is_new_user:
-            asyncio.create_task(shutdown_later(application, delay=1.5))
-        else:
-            asyncio.create_task(shutdown_later(application))
-
-        return {"ok": True}
     
     except Exception as e:
         logger.exception(f"Telegram webhook error: {e}")
