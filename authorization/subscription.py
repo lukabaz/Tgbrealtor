@@ -11,6 +11,36 @@ from utils.translations import translations  # Импортируем перев
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 TRIAL_TTL = 2 * 24 * 60 * 60  # 48 часов
 
+def get_settings_keyboard(chat_id: int, lang: str):
+    status = get_bot_status(chat_id)
+    status_btn = translations['stop_button'][lang] if status == "running" else translations['start_button'][lang]
+    return ReplyKeyboardMarkup([
+        [KeyboardButton(translations['settings_button'][lang], web_app={"url": "https://realfind.netlify.app/#/settings"}) ,KeyboardButton(status_btn)],
+        [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": "https://realfind.netlify.app/#/support"})]
+    ], resize_keyboard=True)
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Приветственное сообщение и клавиатура для Telegram WebApp.
+    Кнопки ведут сразу на фронт с initData.
+    """
+    chat_id = update.effective_chat.id
+    #lang = get_user_language(update, user_data)
+    lang = update.effective_user.language_code[:2] if update.effective_user.language_code[:2] in ['ru', 'en'] else 'en'
+    welcome_text = translations["welcome"][lang]
+
+    keyboard = get_settings_keyboard(chat_id, lang)
+
+    async def send():
+        return await context.bot.send_message(
+            chat_id=chat_id,
+            text=welcome_text,
+            reply_markup=keyboard
+        )
+
+    await retry_on_timeout(send, chat_id=chat_id, message_text=welcome_text)
+    logger.info(f"👋 Sent welcome message and WebApp keyboard to chat_id={chat_id}")
+
 def save_user_data(chat_id: int, data: dict):
     redis_client.hset(f"user:{chat_id}", mapping=data)
 
@@ -68,14 +98,6 @@ def get_user_language(update: Update, user_data: dict) -> str:
     logger.info(f"Selected language for chat_id={update.effective_chat.id}: {lang}")
     return lang if lang in ['ru', 'en'] else 'en'
 
-def get_settings_keyboard(chat_id: int, lang: str):
-    status = get_bot_status(chat_id)
-    status_btn = translations['stop_button'][lang] if status == "running" else translations['start_button'][lang]
-    return ReplyKeyboardMarkup([
-        [KeyboardButton(translations['settings_button'][lang], web_app={"url": "https://realfind.netlify.app/#/settings"}), KeyboardButton(status_btn)],
-        [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": "https://realfind.netlify.app/#/support"})] 
-    ], resize_keyboard=True)
-
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str, lang: str):
     async def send():
         return await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_settings_keyboard(chat_id, lang))
@@ -88,7 +110,7 @@ async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = get_user_language(update, user_data)
         welcome_text = translations['welcome'][lang]
         async def send_welcome():
-            return await context.bot.send_message(chat_id=cm.chat.id, text=welcome_text, reply_markup=get_settings_keyboard(cm.chat.id, lang))
+            return await context.bot.send_message(chat_id=cm.chat.id, text=welcome_text) # , reply_markup=get_settings_keyboard(cm.chat.id, lang)
         await retry_on_timeout(send_welcome, chat_id=cm.chat.id, message_text=welcome_text)
 
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
