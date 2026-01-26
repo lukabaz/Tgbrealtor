@@ -103,15 +103,10 @@ async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, 
         return await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=get_settings_keyboard(chat_id, lang))
     await retry_on_timeout(send, chat_id=chat_id, message_text=text)
 
-async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def welcome_new_user(update: Update, _context: ContextTypes.DEFAULT_TYPE):
     cm = update.my_chat_member
-    if cm.chat.type == "private" and cm.new_chat_member.status == "member":
-        user_data = get_user_data(cm.chat.id)
-        lang = get_user_language(update, user_data)
-        welcome_text = translations['welcome'][lang]
-        async def send_welcome():
-            return await context.bot.send_message(chat_id=cm.chat.id, text=welcome_text) # , reply_markup=get_settings_keyboard(cm.chat.id, lang)
-        await retry_on_timeout(send_welcome, chat_id=cm.chat.id, message_text=welcome_text)
+    if cm.chat.type != "private" or cm.new_chat_member.status != "member":
+        return
 
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
