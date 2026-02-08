@@ -40,7 +40,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     await retry_on_timeout(send, chat_id=chat_id, message_text=welcome_text)
-    logger.info(f"👋 Sent welcome message and WebApp keyboard to chat_id={chat_id}")
+    #logger.info(f"👋 Sent welcome message and WebApp keyboard to chat_id={chat_id}")
 
 def save_user_data(chat_id: int, data: dict):
     redis_client.hset(f"user:{chat_id}", mapping=data)
@@ -76,13 +76,13 @@ def save_bot_status(chat_id: int, status: str, set_sub_end: bool = False, custom
         sub_end = int(user_data.get("subscription_end", "0"))
         if sub_end > int(datetime.now(timezone.utc).timestamp()):
             redis_client.sadd("subscribed_users", chat_id)
-            logger.info(f"➕ Added chat_id={chat_id} to subscribed_users")
+            #logger.info(f"➕ Added chat_id={chat_id} to subscribed_users")
         else:
             redis_client.srem("subscribed_users", chat_id)
-            logger.info(f"➖ Removed chat_id={chat_id} from subscribed_users (subscription expired)")
+            #logger.info(f"➖ Removed chat_id={chat_id} from subscribed_users (subscription expired)")
     else:
         redis_client.srem("subscribed_users", chat_id)
-        logger.info(f"➖ Removed chat_id={chat_id} from subscribed_users (status stopped)")
+        #logger.info(f"➖ Removed chat_id={chat_id} from subscribed_users (status stopped)")
 
 def is_subscription_active(chat_id: int) -> bool:
     user_data = get_user_data(chat_id)
@@ -96,7 +96,7 @@ def get_bot_status(chat_id: int) -> str:
 def get_user_language(update: Update, user_data: dict) -> str:
     # Приоритет: язык из Redis (WebApp) → language_code → английский
     lang = user_data.get('language', update.effective_user.language_code[:2])
-    logger.info(f"Selected language for chat_id={update.effective_chat.id}: {lang}")
+    #logger.info(f"Selected language for chat_id={update.effective_chat.id}: {lang}")
     return lang if lang in ['ru', 'en'] else 'en'
 
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str, lang: str):
@@ -119,7 +119,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if is_subscription_active(chat_id):
             save_bot_status(chat_id, "running")
             #await context.application.subscription_manager.refresh_subscriptions(source="all") 
-            logger.info(f"🔄 Cache refreshed after start for chat_id={chat_id}") 
+            #logger.info(f"🔄 Cache refreshed after start for chat_id={chat_id}") 
             start_text = translations['start'][lang]
             await send_status_message(chat_id, context, start_text, lang)
         else:
@@ -139,7 +139,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text in [translations['stop_button']['ru'], translations['stop_button']['en']]:
         save_bot_status(chat_id, "stopped")
         #await context.application.subscription_manager.refresh_subscriptions(source="all")
-        logger.info(f"🔄 Cache refreshed after stop for chat_id={chat_id}")
+        #logger.info(f"🔄 Cache refreshed after stop for chat_id={chat_id}")
         stop_text = translations['stop_expired'][lang] if not is_subscription_active(chat_id) else translations['stop'][lang]
         await send_status_message(chat_id, context, stop_text, lang)
     elif text in [translations['free_button']['ru'], translations['free_button']['en']]:

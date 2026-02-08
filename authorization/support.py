@@ -42,7 +42,7 @@ async def handle_support_text(update: Update, context: ContextTypes.DEFAULT_TYPE
                 admin_lang = get_user_language(update, admin_data)
                 success_text = translations['support_reply_sent'][admin_lang]
                 await update.message.reply_text(success_text)
-                logger.info(f"✅ Ответ отправлен пользователю {user_id}: {reply}")
+                #logger.info(f"✅ Ответ отправлен пользователю {user_id}: {reply}")
             except Exception as e:
                 logger.exception(f"❌ Ошибка при отправке ответа пользователю {user_id}: {e}")
                 admin_data = get_user_data(update.effective_chat.id)
