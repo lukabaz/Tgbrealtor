@@ -61,8 +61,8 @@ translations = {
         "en": "Access to announcements"
     },
     "invoice_description": {
-        "ru": "Подписка на 7 дней",
-        "en": "7-day subscription"
+        "ru": "Подписка на 30 дней",
+        "en": "30-day subscription"
     },
     "invoice_label": {
         "ru": "Стоимость",
