@@ -29,18 +29,18 @@ def safe_int(value, default=0):
 
 def build_myhome_url(settings: dict) -> str:
     city_map = {
-        "1": {"id": "1", "slug": "Tbilisi"},
-        "2": {"id": "15", "slug": "Batumi"},
-        "3": {"id": "96", "slug": "Kutaisi"},
+        "1": {"id": "1", "slug": "tbilisi"},
+        "2": {"id": "15", "slug": "batumi"},
+        "3": {"id": "96", "slug": "kutaisi"},
     }
 
     district_map = {
         "tbilisi": {
-            "Vake-Saburtalo": {"district": "4", "urban": "38,39,40,41,42,43,44,45,46,47,101,28,30,48,106,111,121,29"},
-            "Didube-Chugureti": {"district": "3", "urban": "23,24,25,27,103,26"},
-            "Gldani-Nadzaladevi": {"district": "1", "urban": "2,3,4,5,6,7,8,9,10,11,12,120,1,122"},
-            "Isani-Samgori": {"district": "5", "urban": "49,50,51,52,53,54,55,56,58,59,60,78,117"},
-            "Tbilisi Suburb": {"district": "2", "urban": "68,13,14,15,16,17,18,19,20,21,22,69,70,102,118"},
+            "Vake-Saburtalo": {"district": "4",  "urban": "38,39,40,41,42,43,44,45,46,47,101,28,30,48,106,111,121,29", "slug": "vake"},
+            "Didube-Chugureti": {"district": "3", "urban": "23,24,25,27,103,26", "slug": "didube"},
+            "Gldani-Nadzaladevi": {"district": "1", "urban": "2,3,4,5,6,7,8,9,10,11,12,120,1,122", "slug": "gldani"},
+            "Isani-Samgori":      {"district": "5", "urban": "49,50,51,52,53,54,55,56,58,59,60,78,117", "slug": "varketili"},
+            "Tbilisi Suburb":     {"district": "2", "urban": "68,13,14,15,16,17,18,19,20,21,22,69,70,102,118", "slug": "wveri"},
         },
         "batumi": {
             "Rustaveli": {"district": "8", "slug": "rustavelis-ubani"},
