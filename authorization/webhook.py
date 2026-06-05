@@ -43,24 +43,23 @@ def build_myhome_url(settings: dict) -> str:
             "Tbilisi Suburb": {"district": "2", "urban": "68,13,14,15,16,17,18,19,20,21,22,69,70,102,118"},
         },
         "batumi": {
-            "Rustaveli": {"district": "8", "urban": "72"},
-            "Bagrationi": {"district": "9", "urban": "73"},
-            "Agmashenebeli": {"district": "10", "urban": "74"},
-            "Javakhishvilli": {"district": "11", "urban": "75"},
-            "Khimshiashvili": {"district": "13", "urban": "76"},
-            "Airport": {"district": "15", "urban": "77"},
-            "Old Batumi": {"district": "7", "urban": "71"},
-            "Makhinjauri": {"district": "466"},
-            "Tamar": {"district": "2999"},
-            "Boni-Gorodok": {"district": "3009"},
-            "Kakhabri": {"district": "2995"},
+            "Rustaveli": {"district": "8", "slug": "rustavelis-ubani"},
+            "Bagrationi":     {"district": "9",   "slug": "bagrationis-ubani"},
+            "Agmashenebeli":  {"district": "10",  "slug": "aghmasheneblis-ubani"},
+            "Javakhishvilli": {"district": "11",  "slug": "javakhishvilis-ubani"},
+            "Khimshiashvili": {"district": "13",  "slug": "khimshiashvilis-ubani"},
+            "Airport":        {"district": "15",  "slug": "aeroportis-ubani"},
+            "Old Batumi":     {"district": "7",   "slug": "dzveli-batumis-ubani"},     
+            "Makhinjauri":    {"district": "466", "slug": "makhinjauri"},
+            "Tamar":          {"district": "2999","slug": "tamaris-dasakhleba"},       
+            "Boni-Gorodok":   {"district": "3009","slug": "boni-gorodokis-ubani"},
+            "Kakhabri":       {"district": "2995","slug": "kakhabris-ubani"},
         },
-        "kutaisi": {
-            "Byols": {"district": "20"},
-            "Avtokarkhana": {"district": "21"},
-            "Nikea": {"district": "22"},
-            "Hill": {"district": "23"},
-            "Choma": {"district": "24"},
+        "kutaisi": { 
+            "Avtokarkhana": {"district": "25", "slug": "avtoqarkhana"},    # обновлено "Byols":        {"district": "20", "slug": "byols"}, "Hill":         {"district": "23", "slug": "????"},            # если нужно добавить
+            "Nikea":        {"district": "29", "slug": "nikea"},          
+            "Choma":        {"district": "31", "slug": "tchoma"},
+            "Ninoshvili":   {"district": "42", "slug": "ninoshvili"},
         },
     }
 
@@ -74,14 +73,16 @@ def build_myhome_url(settings: dict) -> str:
 
     districts = []
     urbans = []
+    district_slugs = []   
 
     for name in selected_districts:
         mapping = district_map.get(city_key, {}).get(name)
         if mapping:
-            if "district" in mapping:
-                districts.append(mapping["district"])
+            districts.append(mapping.get("district"))
             if "urban" in mapping:
                 urbans.append(mapping["urban"])
+            if "slug" in mapping:                                 # ← новое
+                district_slugs.append(mapping["slug"])    
 
     deal_type_map = {"sale": "1", "rent": "2"}
     deal_type = deal_type_map.get(settings.get("deal_type", ""), "1")
@@ -99,13 +100,12 @@ def build_myhome_url(settings: dict) -> str:
     bedrooms = ",".join(str(i) for i in range(bedrooms_from, bedrooms_to + 1)) if bedrooms_from and bedrooms_to else ""
     own_ads = "physical" if str(settings.get("own_ads", "")).lower() == "true" else "all"
 
-    base_path = {
-        "1": "/s/iyideba-bina-Tbilisshi",
-        "2": "/s/qiravdeba-bina-Batumshi",
-        "3": "/s/iyideba-bina-Kutaisshi"
-    }.get(city_id, "/s/iyideba-bina-Tbilisshi")
+    # ==================== НОВЫЙ УНИВЕРСАЛЬНЫЙ ФОРМАТ ====================
+    deal_slug = "prodazha" if deal_type == "1" else "arenda"
+    base_path = f"/ru/nedvizhimost/{deal_slug}/kvartira/{city_info['slug']}"
 
-    base_url = f"https://www.myhome.ge/ru{base_path}"
+    district_part = f"/{district_slugs[0]}" if district_slugs else ""
+    base_url = f"https://www.myhome.ge{base_path}{district_part}/"
 
     params = [
         "CardView=1",
@@ -131,6 +131,16 @@ def build_myhome_url(settings: dict) -> str:
         params.append(f"districts={','.join(districts)}")
     if urbans:
         params.append(f"urbans={','.join(urbans)}")
+
+    # Slug-параметры (важны для новой структуры)
+    params.extend([
+        f"slug=nedvizhimost",
+        f"slug={deal_slug}",
+        "slug=kvartira",
+        f"slug={city_info['slug']}",
+    ])
+    if district_slugs:
+        params.append(f"slug={district_slugs[0]}")
 
     return f"{base_url}?{'&'.join(params)}"
 
