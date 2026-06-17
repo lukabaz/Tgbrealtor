@@ -308,8 +308,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             phones = payload.get("phones", [])
             key = f"blacklist:{user_id}"
 
-            # Перезаписываем весь список целиком
-            redis_client.delete(key)
+            # Добавляем номера в чёрный список
             if phones:
                 normalized = [
                     "".join(c for c in p if c.isdigit() or c == "+")
