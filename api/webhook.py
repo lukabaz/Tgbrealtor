@@ -7,9 +7,10 @@ from telegram.ext import Application, MessageHandler, filters, PreCheckoutQueryH
 import orjson  # Для JSON parse (как в webhook.py)
 from authorization.subscription import start_command, welcome_new_user, handle_buttons, successful_payment, pre_checkout  # Импорт handlers из subscription (без handle_user_message)
 from authorization.webhook import webhook_update  # , format_filters_response Импорт webhook_update и format
-from authorization.support import handle_support_text  # Отдельный импорт для handle_user_message
+from authorization.support import handle_support_text  Отдельный импорт для handle_user_message
 from utils.logger import logger
 from config import TELEGRAM_TOKEN, SUPPORT_CHAT_ID
+from utils.redis_client import redis_client # Импорт redis_client для работы с черным списком
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Global Application (lazy init в эндпоинтах для serverless cold starts)
@@ -33,6 +34,11 @@ async def build_application():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
 
     return application
+
+@app.get("/api/blacklist/{user_id}")
+async def get_blacklist(user_id: int):
+    phones = list(redis_client.smembers(f"blacklist:{user_id}"))
+    return {"phones": sorted(phones)}
 
 @app.post("/telegram-webhook")
 async def telegram_webhook(request: Request):

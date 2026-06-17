@@ -15,9 +15,11 @@ SUBSCRIPTION_DAYS = 30
 def get_settings_keyboard(chat_id: int, lang: str):
     status = get_bot_status(chat_id)
     status_btn = translations['stop_button'][lang] if status == "running" else translations['start_button'][lang]
+    blacklist_btn_text = "🚫 Чёрный список" if lang == "ru" else "🚫 Blacklist"
     return ReplyKeyboardMarkup([
         [KeyboardButton(translations['settings_button'][lang], web_app={"url": "https://realfind.netlify.app/#/settings"}) ,KeyboardButton(status_btn)],
-        [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": "https://realfind.netlify.app/#/support"})]
+        [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": "https://realfind.netlify.app/#/support"})],
+        [KeyboardButton(blacklist_btn_text, web_app={"url": "https://realfind.netlify.app/#/blacklist"})],
     ], resize_keyboard=True)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

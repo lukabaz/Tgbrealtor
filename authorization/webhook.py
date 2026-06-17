@@ -198,6 +198,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "own_ads": payload.get("own_ads", False),
             }
 
+
             # Логирование содержимого settings["districts"]
             logger.debug(f"Settings districts: {settings['districts']}")
 
@@ -303,6 +304,31 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return await context.bot.send_message(chat_id=user_id, text=response_text)
             await retry_on_timeout(send_confirmation)
 
+        elif data_type == "blacklist":
+            phones = payload.get("phones", [])
+            key = f"blacklist:{user_id}"
+
+            # Перезаписываем весь список целиком
+            redis_client.delete(key)
+            if phones:
+                normalized = [
+                    "".join(c for c in p if c.isdigit() or c == "+")
+                    for p in phones
+                    if any(c.isdigit() for c in p)
+                ]
+                if normalized:
+                    redis_client.sadd(key, *normalized)
+
+            count = len(phones)
+            if lang == "ru":
+                confirm_text = f"🚫 Чёрный список обновлён: {count} номер(ов)"
+            else:
+                confirm_text = f"🚫 Blacklist updated: {count} number(s)"
+
+            async def send_blacklist_confirmation():
+                return await context.bot.send_message(chat_id=user_id, text=confirm_text)
+            await retry_on_timeout(send_blacklist_confirmation)
+            
         else:
             error_text = translations['unknown_type'][lang]
             async def send_unknown():

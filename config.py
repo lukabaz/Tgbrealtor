@@ -8,6 +8,7 @@ REDIS_URL = os.getenv("REDIS_URL")
 WEBHOOK_URL = f"https://{os.getenv('VERCEL_URL', 'localhost:3000')}/{TELEGRAM_TOKEN}"  # Vercel auto VERCEL_URL, fallback for local
 PORT = int(os.getenv("PORT", 3000))  # Vercel PORT auto
 MONGO_URI = os.getenv("MONGO_URI")
+VITE_BOT_API_URL = os.getenv("VITE_BOT_API_URL") # для черного списка
 
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN not found")
@@ -15,6 +16,8 @@ if not REDIS_URL:
     raise ValueError("REDIS_URL not found")
 if not MONGO_URI:
     raise ValueError("MONGO_URI не найден в переменных окружения")
+if not VITE_BOT_API_URL:
+    raise ValueError("VITE_BOT_API_URL not found")
 
 
 
