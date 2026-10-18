@@ -230,7 +230,6 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             agent_doc = {
                 "chat_id": user_id,
                 "language": lang,
-                "active": False,  # ❗️по умолчанию выключен, активируется позже при запуске
                 "updated_at": datetime.utcnow(),
                 "filters": {
                     "city": city_map.get(settings["city"], "Unknown"),

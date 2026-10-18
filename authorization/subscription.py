@@ -11,6 +11,7 @@ from utils.translations import translations  # Импортируем перев
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 TRIAL_TTL = 2 * 24 * 60 * 60  # 48 часов
 SUBSCRIPTION_DAYS = 30
+EXPIRED_KEY_GRACE = 3 * 24 * 60 * 60  # ключ user:<id> живёт ещё 3 дня после конца подписки: watcher успевает отправить уведомление
 
 def get_settings_keyboard(chat_id: int, lang: str):
     status = get_bot_status(chat_id)
@@ -60,12 +61,12 @@ def save_bot_status(chat_id: int, status: str, set_sub_end: bool = False, custom
 
     if custom_sub_end:
         end_timestamp = int(custom_sub_end.timestamp())
-        ttl = end_timestamp - int(datetime.now(timezone.utc).timestamp())
+        ttl = end_timestamp - int(datetime.now(timezone.utc).timestamp()) + EXPIRED_KEY_GRACE
         user_data['subscription_end'] = str(end_timestamp)
         redis_client.expire(f"user:{chat_id}", ttl)
     elif set_sub_end:
         end_timestamp = get_end_of_subscription()
-        ttl = end_timestamp - int(datetime.now(timezone.utc).timestamp())
+        ttl = end_timestamp - int(datetime.now(timezone.utc).timestamp()) + EXPIRED_KEY_GRACE
         user_data['subscription_end'] = str(end_timestamp)
         redis_client.expire(f"user:{chat_id}", ttl)
     else:
@@ -179,7 +180,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
-    _, payload_chat_id, new_status = update.message.successful_payment.invoice_payload.split(":")
+    _, payload_chat_id, _payload_status = update.message.successful_payment.invoice_payload.split(":")
     
     if chat_id != int(payload_chat_id):
         return
@@ -195,10 +196,29 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         new_end = now + timedelta(days=SUBSCRIPTION_DAYS)
 
-    save_bot_status(chat_id, new_status, custom_sub_end=new_end)
+    # Статус не навязываем (раньше ставился из payload = stopped): остаётся тот, что у пользователя сейчас,
+    # поэтому кнопка Старт/Стоп на клавиатуре всегда соответствует реальному состоянию.
+    save_bot_status(chat_id, get_bot_status(chat_id), custom_sub_end=new_end)
     formatted_date = new_end.strftime("%d-%m-%Y %H:%M" if lang == "ru" else "%Y-%m-%d %H:%M")
     payment_text = translations['payment'][lang].format(date=formatted_date)
     await send_status_message(chat_id, context, payment_text, lang)
+
+async def renew_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/renew - продлить подписку (в том числе до её окончания: +30 дней к текущей дате окончания)."""
+    chat_id = update.message.chat_id
+    lang = get_user_language(update, get_user_data(chat_id))
+    async def send_invoice():
+        return await context.bot.send_invoice(
+            chat_id=chat_id,
+            title=translations['invoice_title'][lang],
+            description=translations['invoice_description'][lang],
+            payload=f"toggle_bot_status:{chat_id}:stopped",
+            provider_token="",
+            currency="XTR",
+            prices=[{"label": translations['invoice_label'][lang], "amount": 3500}],
+            start_parameter="toggle-bot-status"
+        )
+    await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=translations['invoice'][lang])
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async def send_pre_checkout():
