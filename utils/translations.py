@@ -52,6 +52,10 @@ translations = {
         "ru": "🎁 Бесплатно",
         "en": "🎁 Free"
     },
+    "renew_button": {
+        "ru": "💳 Продлить",
+        "en": "💳 Renew"
+    },
     "support_button": {
         "ru": "💬 Поддержка",
         "en": "💬 Support"

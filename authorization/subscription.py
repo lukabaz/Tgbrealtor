@@ -20,7 +20,7 @@ def get_settings_keyboard(chat_id: int, lang: str):
     return ReplyKeyboardMarkup([
         [KeyboardButton(translations['settings_button'][lang], web_app={"url": "https://realfind.netlify.app/#/settings"}) ,KeyboardButton(status_btn)],
         [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": "https://realfind.netlify.app/#/support"})],
-        [KeyboardButton(blacklist_btn_text, web_app={"url": "https://realfind.netlify.app/#/blacklist"})],
+        [KeyboardButton(blacklist_btn_text, web_app={"url": "https://realfind.netlify.app/#/blacklist"}), KeyboardButton(translations['renew_button'][lang])],
     ], resize_keyboard=True)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -139,6 +139,8 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     start_parameter="toggle-bot-status"
                 )
             await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=invoice_text)
+    elif text in [translations['renew_button']['ru'], translations['renew_button']['en']]:
+        await renew_command(update, context)
     elif text in [translations['stop_button']['ru'], translations['stop_button']['en']]:
         save_bot_status(chat_id, "stopped")
         #await context.application.subscription_manager.refresh_subscriptions(source="all")
@@ -204,7 +206,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await send_status_message(chat_id, context, payment_text, lang)
 
 async def renew_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/renew - продлить подписку (в том числе до её окончания: +30 дней к текущей дате окончания)."""
+    """Кнопка «Продлить» - продлить подписку (в том числе до её окончания: +30 дней к текущей дате окончания)."""
     chat_id = update.message.chat_id
     lang = get_user_language(update, get_user_data(chat_id))
     async def send_invoice():
