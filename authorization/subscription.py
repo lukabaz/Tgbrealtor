@@ -8,6 +8,7 @@ from utils.telegram_utils import retry_on_timeout
 from utils.translations import translations  # Импортируем переводы
 
 SUPPORTED_LANGS = ("ru", "en")
+DEFAULT_LANG = "ru"
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 TRIAL_TTL = 2 * 24 * 60 * 60  # 48 часов
 SUBSCRIPTION_DAYS = 30
@@ -17,10 +18,11 @@ def get_settings_keyboard(chat_id: int, lang: str):
     status = get_bot_status(chat_id)
     status_btn = translations['stop_button'][lang] if status == "running" else translations['start_button'][lang]
     blacklist_btn_text = "🚫 Чёрный список" if lang == "ru" else "🚫 Blacklist"
+    base = f"https://realfind.netlify.app/?lang={lang}" # передаём язык в initData, чтобы фронт сразу подхватил нужный язык
     return ReplyKeyboardMarkup([
-        [KeyboardButton(translations['settings_button'][lang], web_app={"url": "https://realfind.netlify.app/#/settings"}) ,KeyboardButton(status_btn)],
-        [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": "https://realfind.netlify.app/#/support"})],
-        [KeyboardButton(blacklist_btn_text, web_app={"url": "https://realfind.netlify.app/#/blacklist"}), KeyboardButton(translations['renew_button'][lang])],
+        [KeyboardButton(translations['settings_button'][lang], web_app={"url": f"{base}#/settings"}), KeyboardButton(status_btn)],
+        [KeyboardButton(translations['free_button'][lang]), KeyboardButton(translations['support_button'][lang], web_app={"url": f"{base}#/support"})],
+        [KeyboardButton(blacklist_btn_text, web_app={"url": f"{base}#/blacklist"}), KeyboardButton(translations['renew_button'][lang])],
     ], resize_keyboard=True)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -95,14 +97,13 @@ def get_bot_status(chat_id: int) -> str:
     user_data = get_user_data(chat_id)
     return user_data.get('bot_status', "stopped")
 
-def resolve_lang(user_data: dict | None, language_code: str | None) -> str:
-    """Redis (выбор во фронте) → language_code Telegram → en."""
-    lang = (user_data or {}).get("language") or (language_code or "")[:2]
-    return lang if lang in SUPPORTED_LANGS else "en"
+def resolve_lang(user_data: dict | None, language_code: str | None = None) -> str:
+    """Выбор пользователя (Redis) → ru по умолчанию. language_code Telegram намеренно не используется."""
+    lang = (user_data or {}).get("language")
+    return lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
 
 def get_user_language(update: Update, user_data: dict) -> str:
-    code = update.effective_user.language_code if update.effective_user else None
-    return resolve_lang(user_data, code)
+    return resolve_lang(user_data)
 
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str, lang: str):
     async def send():

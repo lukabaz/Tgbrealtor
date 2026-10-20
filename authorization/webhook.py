@@ -32,7 +32,7 @@ def safe_int(value, default=0):
 def format_range(start, end, suffix="", lang="ru"):
     start = safe_int(start, None)
     end = safe_int(end, None)
-    if lang == "en":
+    if lang == "ru":
         none, up_to, from_ = "Not specified", "Up to", "From"
     else:
         none, up_to, from_ = "Не указано", "До", "От"
@@ -230,7 +230,7 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Новый язык из фронта; если не прислали — оставляем текущий
             new_lang = payload.get("language") or lang
-            lang = new_lang if new_lang in SUPPORTED_LANGS else "en"
+            lang = new_lang if new_lang in SUPPORTED_LANGS else "ru"
 
             # Язык пишем в Redis ДО построения клавиатуры
             save_user_data(user_id, {
