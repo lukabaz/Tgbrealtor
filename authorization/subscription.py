@@ -7,7 +7,7 @@ from utils.logger import logger
 from utils.telegram_utils import retry_on_timeout
 from utils.translations import translations  # Импортируем переводы
 
-
+SUPPORTED_LANGS = ("ru", "en")
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
 TRIAL_TTL = 2 * 24 * 60 * 60  # 48 часов
 SUBSCRIPTION_DAYS = 30
@@ -30,9 +30,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     chat_id = update.effective_chat.id
     #lang = get_user_language(update, user_data)
-    lang = update.effective_user.language_code[:2] if update.effective_user.language_code[:2] in ['ru', 'en'] else 'en'
+    lang = get_user_language(update, get_user_data(chat_id))   # <-- вместо language_code
     welcome_text = translations["welcome"][lang]
-
     keyboard = get_settings_keyboard(chat_id, lang)
 
     async def send():
@@ -96,11 +95,14 @@ def get_bot_status(chat_id: int) -> str:
     user_data = get_user_data(chat_id)
     return user_data.get('bot_status', "stopped")
 
+def resolve_lang(user_data: dict | None, language_code: str | None) -> str:
+    """Redis (выбор во фронте) → language_code Telegram → en."""
+    lang = (user_data or {}).get("language") or (language_code or "")[:2]
+    return lang if lang in SUPPORTED_LANGS else "en"
+
 def get_user_language(update: Update, user_data: dict) -> str:
-    # Приоритет: язык из Redis (WebApp) → language_code → английский
-    lang = user_data.get('language', update.effective_user.language_code[:2])
-    #logger.info(f"Selected language for chat_id={update.effective_chat.id}: {lang}")
-    return lang if lang in ['ru', 'en'] else 'en'
+    code = update.effective_user.language_code if update.effective_user else None
+    return resolve_lang(user_data, code)
 
 async def send_status_message(chat_id: int, context: ContextTypes.DEFAULT_TYPE, text: str, lang: str):
     async def send():
@@ -135,7 +137,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     payload=f"toggle_bot_status:{chat_id}:stopped",
                     provider_token="",
                     currency="XTR",
-                    prices=[{"label": translations['invoice_label'][lang], "amount": 3500}],
+                    prices=[{"label": translations['invoice_label'][lang], "amount": 4500}],
                     start_parameter="toggle-bot-status"
                 )
             await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=invoice_text)
@@ -167,7 +169,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     payload=f"toggle_bot_status:{chat_id}:stopped",
                     provider_token="",
                     currency="XTR",
-                    prices=[{"label": translations['invoice_label'][lang], "amount": 3500}],
+                    prices=[{"label": translations['invoice_label'][lang], "amount": 4500}],
                     start_parameter="toggle-bot-status"
                 )
             await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=translations['invoice'][lang])
@@ -217,7 +219,7 @@ async def renew_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             payload=f"toggle_bot_status:{chat_id}:stopped",
             provider_token="",
             currency="XTR",
-            prices=[{"label": translations['invoice_label'][lang], "amount": 3500}],
+            prices=[{"label": translations['invoice_label'][lang], "amount": 4500}],
             start_parameter="toggle-bot-status"
         )
     await retry_on_timeout(send_invoice, chat_id=chat_id, message_text=translations['invoice'][lang])

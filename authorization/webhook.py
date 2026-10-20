@@ -1,31 +1,50 @@
 # authorization/webhook.py
 import orjson
 import time
+from datetime import datetime
+
+from pymongo import MongoClient
 from telegram import Update
 from telegram.ext import ContextTypes
-from config import SUPPORT_CHAT_ID
-from authorization.subscription import save_user_data
+
+from config import SUPPORT_CHAT_ID, MONGO_URI
+from authorization.subscription import save_user_data, get_settings_keyboard, resolve_lang
 from utils.logger import logger
 from utils.redis_client import redis_client
 from utils.telegram_utils import retry_on_timeout
 from utils.translations import translations
 
-from pymongo import MongoClient
-from datetime import datetime
-from config import MONGO_URI
-
 mongo = MongoClient(MONGO_URI)
 db = mongo["real_estate"]
 agents_collection = db["agents"]
 
-
 INACTIVITY_TTL = int(1.2 * 30 * 24 * 60 * 60)  # 1.2 месяца
+SUPPORTED_LANGS = ("ru", "en")
+
 
 def safe_int(value, default=0):
     try:
         return int(str(value).replace(" ", ""))
     except (ValueError, TypeError):
         return default
+
+
+def format_range(start, end, suffix="", lang="ru"):
+    start = safe_int(start, None)
+    end = safe_int(end, None)
+    if lang == "en":
+        none, up_to, from_ = "Not specified", "Up to", "From"
+    else:
+        none, up_to, from_ = "Не указано", "До", "От"
+
+    if start is None and end is None:
+        return none
+    if start is None:
+        return f"{up_to} {end}{suffix}"
+    if end is None:
+        return f"{from_} {start}{suffix}"
+    return f"{start}-{end}{suffix}"
+
 
 def build_myhome_url(settings: dict) -> str:
     city_map = {
@@ -36,30 +55,32 @@ def build_myhome_url(settings: dict) -> str:
 
     district_map = {
         "tbilisi": {
-            "Vake-Saburtalo": {"district": "4",  "urban": "38,39,40,41,42,43,44,45,46,47,101,28,30,48,106,111,121,29", "slug": "vake"},
+            "Vake-Saburtalo": {"district": "4", "urban": "38,39,40,41,42,43,44,45,46,47,101,28,30,48,106,111,121,29", "slug": "vake"},
             "Didube-Chugureti": {"district": "3", "urban": "23,24,25,27,103,26", "slug": "didube"},
             "Gldani-Nadzaladevi": {"district": "1", "urban": "2,3,4,5,6,7,8,9,10,11,12,120,1,122", "slug": "gldani"},
-            "Isani-Samgori":      {"district": "5", "urban": "49,50,51,52,53,54,55,56,58,59,60,78,117", "slug": "varketili"},
-            "Tbilisi Suburb":     {"district": "2", "urban": "68,13,14,15,16,17,18,19,20,21,22,69,70,102,118", "slug": "wveri"},
+            "Isani-Samgori": {"district": "5", "urban": "49,50,51,52,53,54,55,56,58,59,60,78,117", "slug": "varketili"},
+            "Tbilisi Suburb": {"district": "2", "urban": "68,13,14,15,16,17,18,19,20,21,22,69,70,102,118", "slug": "wveri"},
         },
         "batumi": {
             "Rustaveli": {"district": "8", "slug": "rustavelis-ubani"},
-            "Bagrationi":     {"district": "9",   "slug": "bagrationis-ubani"},
-            "Agmashenebeli":  {"district": "10",  "slug": "aghmasheneblis-ubani"},
-            "Javakhishvilli": {"district": "11",  "slug": "javakhishvilis-ubani"},
-            "Khimshiashvili": {"district": "13",  "slug": "khimshiashvilis-ubani"},
-            "Airport":        {"district": "15",  "slug": "aeroportis-ubani"},
-            "Old Batumi":     {"district": "7",   "slug": "dzveli-batumis-ubani"},     
-            "Makhinjauri":    {"district": "466", "slug": "makhinjauri"},
-            "Tamar":          {"district": "2999","slug": "tamaris-dasakhleba"},       
-            "Boni-Gorodok":   {"district": "3009","slug": "boni-gorodokis-ubani"},
-            "Kakhabri":       {"district": "2995","slug": "kakhabris-ubani"},
+            "Bagrationi": {"district": "9", "slug": "bagrationis-ubani"},
+            "Agmashenebeli": {"district": "10", "slug": "aghmasheneblis-ubani"},
+            "Javakhishvilli": {"district": "11", "slug": "javakhishvilis-ubani"},
+            "Khimshiashvili": {"district": "13", "slug": "khimshiashvilis-ubani"},
+            "Airport": {"district": "15", "slug": "aeroportis-ubani"},
+            "Old Batumi": {"district": "7", "slug": "dzveli-batumis-ubani"},
+            "Makhinjauri": {"district": "466", "slug": "makhinjauri"},
+            "Tamar": {"district": "2999", "slug": "tamaris-dasakhleba"},
+            "Boni-Gorodok": {"district": "3009", "slug": "boni-gorodokis-ubani"},
+            "Kakhabri": {"district": "2995", "slug": "kakhabris-ubani"},
         },
-        "kutaisi": { 
-            "Avtokarkhana": {"district": "25", "slug": "avtoqarkhana"},    # обновлено "Byols":        {"district": "20", "slug": "byols"}, "Hill":         {"district": "23", "slug": "????"},            # если нужно добавить
-            "Nikea":        {"district": "29", "slug": "nikea"},          
-            "Choma":        {"district": "31", "slug": "tchoma"},
-            "Ninoshvili":   {"district": "42", "slug": "ninoshvili"},
+        "kutaisi": {
+            "Avtokarkhana": {"district": "25", "slug": "avtoqarkhana"},
+            "Nikea": {"district": "29", "slug": "nikea"},
+            "Choma": {"district": "31", "slug": "tchoma"},
+            "Ninoshvili": {"district": "42", "slug": "ninoshvili"},
+            # "Byols": {"district": "20", "slug": "byols"},
+            # "Hill": {"district": "23", "slug": "????"},
         },
     }
 
@@ -73,7 +94,7 @@ def build_myhome_url(settings: dict) -> str:
 
     districts = []
     urbans = []
-    district_slugs = []   
+    district_slugs = []
 
     for name in selected_districts:
         mapping = district_map.get(city_key, {}).get(name)
@@ -81,8 +102,8 @@ def build_myhome_url(settings: dict) -> str:
             districts.append(mapping.get("district"))
             if "urban" in mapping:
                 urbans.append(mapping["urban"])
-            if "slug" in mapping:                                 # ← новое
-                district_slugs.append(mapping["slug"])    
+            if "slug" in mapping:
+                district_slugs.append(mapping["slug"])
 
     deal_type_map = {"sale": "1", "rent": "2"}
     deal_type = deal_type_map.get(settings.get("deal_type", ""), "1")
@@ -100,7 +121,7 @@ def build_myhome_url(settings: dict) -> str:
     bedrooms = ",".join(str(i) for i in range(bedrooms_from, bedrooms_to + 1)) if bedrooms_from and bedrooms_to else ""
     own_ads = "physical" if str(settings.get("own_ads", "")).lower() == "true" else "all"
 
-    # ==================== НОВЫЙ УНИВЕРСАЛЬНЫЙ ФОРМАТ ====================
+    # ==================== УНИВЕРСАЛЬНЫЙ ФОРМАТ ====================
     deal_slug = "prodazha" if deal_type == "1" else "arenda"
     base_path = f"/ru/nedvizhimost/{deal_slug}/kvartira/{city_info['slug']}"
 
@@ -134,7 +155,7 @@ def build_myhome_url(settings: dict) -> str:
 
     # Slug-параметры (важны для новой структуры)
     params.extend([
-        f"slug=nedvizhimost",
+        "slug=nedvizhimost",
         f"slug={deal_slug}",
         "slug=kvartira",
         f"slug={city_info['slug']}",
@@ -144,25 +165,28 @@ def build_myhome_url(settings: dict) -> str:
 
     return f"{base_url}?{'&'.join(params)}"
 
+
 async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.web_app_data:
         return
 
     user_id = update.effective_user.id
+    lang = "en"  # чтобы except всегда имел lang
     try:
         payload = orjson.loads(update.message.web_app_data.data)
         logger.debug(f"📩 Received Web App data for user_id={user_id}: {payload}")
 
         user_data = redis_client.hgetall(f"user:{user_id}")
-        lang = user_data.get("language", update.effective_user.language_code[:2])
-        lang = lang if lang in ['ru', 'en'] else 'en'
+        lang = resolve_lang(user_data, update.effective_user.language_code)
 
         data_type = payload.get("type")
 
+        # ------------------------------------------------------------ support
         if data_type == "support":
             message = (payload.get("message") or "").strip()
             if not message:
-                error_text = translations['support_empty'][lang]
+                error_text = translations["support_empty"][lang]
+
                 async def send_error():
                     return await context.bot.send_message(chat_id=user_id, text=error_text)
                 await retry_on_timeout(send_error)
@@ -173,15 +197,18 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"(@{update.effective_user.username or 'нет'})\n"
                 f"ID пользователя: {user_id}\n\n{message}"
             )
+
             async def send_to_support():
                 return await context.bot.send_message(SUPPORT_CHAT_ID, forward_text)
             await retry_on_timeout(send_to_support)
 
-            response_text = translations['support_sent'][lang]
+            response_text = translations["support_sent"][lang]
+
             async def send_confirmation():
                 return await context.bot.send_message(chat_id=user_id, text=response_text)
             await retry_on_timeout(send_confirmation)
 
+        # ----------------------------------------------------------- settings
         elif data_type == "settings":
             settings = {
                 "city": payload.get("city"),
@@ -197,117 +224,99 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "bedrooms_to": payload.get("bedrooms_to"),
                 "own_ads": payload.get("own_ads", False),
             }
-
-
-            # Логирование содержимого settings["districts"]
             logger.debug(f"Settings districts: {settings['districts']}")
 
             url = build_myhome_url(settings)
 
-            user_data = {
+            # Новый язык из фронта; если не прислали — оставляем текущий
+            new_lang = payload.get("language") or lang
+            lang = new_lang if new_lang in SUPPORTED_LANGS else "en"
+
+            # Язык пишем в Redis ДО построения клавиатуры
+            save_user_data(user_id, {
                 "settings": url,
                 "filters_timestamp": str(int(time.time())),
-                "language": payload.get("language", "ru"),
-            }
-
-            save_user_data(user_id, user_data)
+                "language": lang,
+            })
             redis_client.expire(f"user:{user_id}", INACTIVITY_TTL)
 
             if redis_client.hget(f"user:{user_id}", "bot_status") == "running":
                 redis_client.sadd("subscribed_users", user_id)
 
-            city_map = {"1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"}
-            city_key_map = {"1": "tbilisi", "2": "batumi", "3": "kutaisi"}
-            deal_type_map = {"sale": "Продажа", "rent": "Аренда"}
-
-            city = city_map.get(settings["city"], "Не выбран")
-            city_key = city_key_map.get(settings["city"], "tbilisi")
-            deal_type = deal_type_map.get(settings["deal_type"], "Не указано")
-            districts = settings.get("districts", {}).get(city_key, [])
-            own_ads = "Да" if str(settings["own_ads"]).lower() == "true" else "Нет"
-
-            # === Сохранение фильтра агента в MongoDB ===
-            agent_doc = {
-                "chat_id": user_id,
-                "language": lang,
-                "updated_at": datetime.utcnow(),
-                "filters": {
-                    "city": city_map.get(settings["city"], "Unknown"),
-                    "deal_type": settings.get("deal_type"),
-                    "price_from": safe_int(settings.get("price_from")),
-                    "price_to": safe_int(settings.get("price_to")),
-                    "floor_from": safe_int(settings.get("floor_from")),      
-                    "floor_to": safe_int(settings.get("floor_to")), 
-                    "rooms_from": safe_int(settings.get("rooms_from")),
-                    "rooms_to": safe_int(settings.get("rooms_to")),
-                    "bedrooms_from": safe_int(settings.get("bedrooms_from")),  
-                    "bedrooms_to": safe_int(settings.get("bedrooms_to")),  
-                    "districts": settings.get("districts", {}).get(city_key, []),
-                    "own_ads": str(settings.get("own_ads")).lower() == "true"
-                }
+            city_names = {
+                "ru": {"1": "Тбилиси", "2": "Батуми", "3": "Кутаиси"},
+                "en": {"1": "Tbilisi", "2": "Batumi", "3": "Kutaisi"},
             }
+            deal_names = {
+                "ru": {"sale": "Продажа", "rent": "Аренда"},
+                "en": {"sale": "Sale", "rent": "Rent"},
+            }
+            city_key = {"1": "tbilisi", "2": "batumi", "3": "kutaisi"}.get(settings["city"], "tbilisi")
+            districts = settings["districts"].get(city_key, [])
+            is_owner = str(settings["own_ads"]).lower() == "true"
+            yes_no = ("Да", "Нет") if lang == "ru" else ("Yes", "No")
 
+            # --- MongoDB ---
             agents_collection.update_one(
                 {"chat_id": user_id},
-                {"$set": agent_doc, "$setOnInsert": {"created_at": datetime.utcnow()}},
-                upsert=True
+                {
+                    "$set": {
+                        "chat_id": user_id,
+                        "language": lang,
+                        "updated_at": datetime.utcnow(),
+                        "filters": {
+                            "city": city_names["ru"].get(settings["city"], "Unknown"),
+                            "deal_type": settings.get("deal_type"),
+                            "price_from": safe_int(settings.get("price_from")),
+                            "price_to": safe_int(settings.get("price_to")),
+                            "floor_from": safe_int(settings.get("floor_from")),
+                            "floor_to": safe_int(settings.get("floor_to")),
+                            "rooms_from": safe_int(settings.get("rooms_from")),
+                            "rooms_to": safe_int(settings.get("rooms_to")),
+                            "bedrooms_from": safe_int(settings.get("bedrooms_from")),
+                            "bedrooms_to": safe_int(settings.get("bedrooms_to")),
+                            "districts": districts,
+                            "own_ads": is_owner,
+                        },
+                    },
+                    "$setOnInsert": {"created_at": datetime.utcnow()},
+                },
+                upsert=True,
             )
 
-            def format_range(start, end, suffix="", lang="ru"):
-                try:
-                    start = int(start)
-                except (ValueError, TypeError):
-                    start = None
-                try:
-                    end = int(end)
-                except (ValueError, TypeError):
-                    end = None
-
-                if lang == "en":
-                    if start is None and end is None:
-                        return "Not specified"
-                    elif start is None:
-                        return f"Up to {end}{suffix}"
-                    elif end is None:
-                        return f"From {start}{suffix}"
-                    else:
-                        return f"{start}-{end}{suffix}"
-                else:  # default to Russian
-                    if start is None and end is None:
-                       return "Не указано"
-                    elif start is None:
-                        return f"До {end}{suffix}"
-                    elif end is None:
-                        return f"От {start}{suffix}"
-                    else:
-                        return f"{start}-{end}{suffix}"
-
-            price = format_range(settings["price_from"], settings["price_to"], suffix="$", lang=lang)
-            floor = format_range(settings["floor_from"], settings["floor_to"], lang=lang)
-            rooms = format_range(settings["rooms_from"], settings["rooms_to"], lang=lang)
-            bedrooms = format_range(settings["bedrooms_from"], settings["bedrooms_to"], lang=lang)
+            # --- Одно сообщение: текст + новая клавиатура на выбранном языке ---
+            labels = {
+                "ru": ["✅ Настройки сохранены!", "Город", "Районы", "Не выбраны", "Тип сделки",
+                       "Цена", "Этаж", "Комнат", "Спален", "Только собственник", "Не выбран", "Не указано"],
+                "en": ["✅ Settings saved!", "City", "Districts", "None", "Deal type",
+                       "Price", "Floor", "Rooms", "Bedrooms", "Owner only", "Not selected", "Not specified"],
+            }[lang]
 
             response_text = (
-                "✅ Фильтры сохранены!\n"
-                f"Город: {city}\n"
-                f"Районы: {', '.join(districts) if districts else 'Не выбраны'}\n"
-                f"Тип сделки: {deal_type}\n"
-                f"Цена: {price}\n"
-                f"Этаж: {floor}\n"
-                f"Комнат: {rooms}\n"
-                f"Спален: {bedrooms}\n"
-                f"Только собственник: {own_ads}"
+                f"{labels[0]}\n"
+                f"{labels[1]}: {city_names[lang].get(settings['city'], labels[10])}\n"
+                f"{labels[2]}: {', '.join(districts) if districts else labels[3]}\n"
+                f"{labels[4]}: {deal_names[lang].get(settings['deal_type'], labels[11])}\n"
+                f"{labels[5]}: {format_range(settings['price_from'], settings['price_to'], '$', lang)}\n"
+                f"{labels[6]}: {format_range(settings['floor_from'], settings['floor_to'], '', lang)}\n"
+                f"{labels[7]}: {format_range(settings['rooms_from'], settings['rooms_to'], '', lang)}\n"
+                f"{labels[8]}: {format_range(settings['bedrooms_from'], settings['bedrooms_to'], '', lang)}\n"
+                f"{labels[9]}: {yes_no[0] if is_owner else yes_no[1]}"
             )
 
-            async def send_confirmation():
-                return await context.bot.send_message(chat_id=user_id, text=response_text)
-            await retry_on_timeout(send_confirmation)
+            keyboard = get_settings_keyboard(user_id, lang)  # язык уже в Redis
 
+            async def send_settings_confirmation():
+                return await context.bot.send_message(
+                    chat_id=user_id, text=response_text, reply_markup=keyboard
+                )
+            await retry_on_timeout(send_settings_confirmation)
+
+        # ---------------------------------------------------------- blacklist
         elif data_type == "blacklist":
             phones = payload.get("phones", [])
             key = f"blacklist:{user_id}"
 
-            # Добавляем номера в чёрный список
             if phones:
                 normalized = [
                     "".join(c for c in p if c.isdigit() or c == "+")
@@ -326,16 +335,19 @@ async def webhook_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             async def send_blacklist_confirmation():
                 return await context.bot.send_message(chat_id=user_id, text=confirm_text)
             await retry_on_timeout(send_blacklist_confirmation)
-            
+
+        # ------------------------------------------------------------ unknown
         else:
-            error_text = translations['unknown_type'][lang]
+            error_text = translations["unknown_type"][lang]
+
             async def send_unknown():
                 return await context.bot.send_message(chat_id=user_id, text=error_text)
             await retry_on_timeout(send_unknown)
 
     except Exception as e:
         logger.error(f"❌ Error processing Web App data for user_id={user_id}: {e}", exc_info=True)
-        error_text = translations['processing_error'][lang]
+        error_text = translations["processing_error"][lang]
+
         async def send_error():
             return await context.bot.send_message(chat_id=user_id, text=error_text)
         await retry_on_timeout(send_error)

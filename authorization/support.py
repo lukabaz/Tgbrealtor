@@ -4,7 +4,7 @@ from telegram.ext import ContextTypes
 import re
 from utils.logger import logger
 from utils.translations import translations
-from authorization.subscription import get_user_data, get_user_language
+from authorization.subscription import get_user_data, get_user_language, resolve_lang
 
 async def handle_support_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.debug("📥 handle_support_text triggered")
@@ -12,7 +12,7 @@ async def handle_support_text(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Check if this is a reply to a support message
     if update.message.reply_to_message:
-        original_message = update.message.reply_to_message.text
+        original_message = update.message.reply_to_message.text or ""
         user_id_match = re.search(r"ID пользователя: (\d+)", original_message)
         if user_id_match:
             user_id = int(user_id_match.group(1))
@@ -28,16 +28,16 @@ async def handle_support_text(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.debug(f"📤 Sending reply to user {user_id}: {reply}")
 
             try:
-                # Получаем язык получателя (user_id)
+                # Язык получателя (user_id): только его Redis, без fallback на язык админа
                 user_data = get_user_data(user_id)
-                lang = get_user_language(update, user_data)
+                lang = resolve_lang(user_data, None)
                 reply_text = translations['support_reply'][lang].format(reply=reply)
                 await context.bot.send_message(
                     chat_id=user_id,
                     text=reply_text,
                     disable_web_page_preview=True
                 )
-                # Получаем язык отправителя (администратора)
+                # Язык отправителя (администратора)
                 admin_data = get_user_data(update.effective_chat.id)
                 admin_lang = get_user_language(update, admin_data)
                 success_text = translations['support_reply_sent'][admin_lang]
@@ -64,4 +64,4 @@ async def handle_support_text(update: Update, context: ContextTypes.DEFAULT_TYPE
     #await context.bot.send_message(
         #update.effective_chat.id,
         #"❗Для обращения нажмите на панели меню кнопку «Поддержка».",
-    #)  
+    #)
